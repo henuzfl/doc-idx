@@ -932,19 +932,15 @@
         // 加载历史记录
         async function loadHistory() {
             // Get tenant from selectedTenant
-            const tenantId = selectedTenant ? selectedTenant.id :
-                             'test_tenant';
+            const tenantId = selectedTenant ? selectedTenant.id : 'test_tenant';
             const listDiv = document.getElementById('history-list');
-            console.log('Loading history for tenant:', tenantId);
 
             try {
                 const response = await fetch(`${API_BASE}/chat/?tenant_id=${tenantId}`);
                 const data = await response.json();
-                console.log('History data:', data);
 
                 // API returns array directly
                 const sessions = Array.isArray(data) ? data : [];
-                console.log('Sessions:', sessions.length);
 
                 if (sessions.length > 0) {
                     // 只显示前10条记录

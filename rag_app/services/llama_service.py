@@ -1,5 +1,5 @@
 import os
-import json
+from functools import lru_cache
 from django.conf import settings
 from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader
 from llama_index.vector_stores.postgres import PGVectorStore
@@ -13,11 +13,20 @@ except ImportError:
     DashScopeRerank = None
 
 
+# 缓存 vector index 实例
+_vector_index_cache = {}
+
+
 def get_vector_index(table_name="llama_knowledge"):
     """
     Initializes and returns the VectorStoreIndex using PostgreSQL pgvector.
     Uses separate vector database configuration from settings.VECTOR_DATABASES.
+    使用缓存提高性能。
     """
+    # 检查缓存
+    if table_name in _vector_index_cache:
+        return _vector_index_cache[table_name]
+
     # Get vector database config from Django settings
     vector_db = settings.VECTOR_DATABASES['default']
     db_name = vector_db['NAME']
@@ -41,10 +50,14 @@ def get_vector_index(table_name="llama_knowledge"):
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
     # Return (or create) the index
-    return VectorStoreIndex.from_vector_store(
+    index = VectorStoreIndex.from_vector_store(
         vector_store=vector_store,
         storage_context=storage_context
     )
+
+    # 缓存结果
+    _vector_index_cache[table_name] = index
+    return index
 
 
 def ingest_document(file_path: str, doc_metadata: dict):

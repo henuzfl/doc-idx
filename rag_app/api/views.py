@@ -6,12 +6,11 @@ from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, T
 from rag_app.services.llama_service import ask_question, delete_document_from_vector
 from rag_app.services.s3_service import s3_service
 from rag_app.services.celery_tasks import process_document
-from django.core.files.storage import FileSystemStorage
-import os
 import threading
 
 
 class TenantViewSet(viewsets.ModelViewSet):
+    """租户管理 ViewSet"""
     queryset = Tenant.objects.all()
     serializer_class = TenantSerializer
 
@@ -20,6 +19,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
+    """文档管理 ViewSet"""
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
 
@@ -29,12 +29,23 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if tenant_id:
             queryset = queryset.filter(tenant_id=tenant_id)
 
+        # 分页支持
+        try:
+            page = int(self.request.query_params.get('page', 0))
+            page_size = int(self.request.query_params.get('page_size', 10))
+            if page > 0 and page_size > 0:
+                start = (page - 1) * page_size
+                end = start + page_size
+                return queryset[start:end]
+        except (ValueError, TypeError):
+            pass
+
         return queryset.order_by('-created_at')
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
 
-        # Get total count for pagination info
+        # 获取总数
         tenant_id = request.query_params.get('tenant_id')
         if tenant_id:
             total = Document.objects.filter(tenant_id=tenant_id).count()
