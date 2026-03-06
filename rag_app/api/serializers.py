@@ -1,5 +1,11 @@
 from rest_framework import serializers
-from rag_app.models import Document, ChatSession, ChatMessage
+from rag_app.models import Document, ChatSession, ChatMessage, Tenant
+
+class TenantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ['id', 'name', 'tenant_id', 'description', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:

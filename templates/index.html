@@ -478,6 +478,86 @@
             opacity: 0.9;
         }
 
+        /* 单选下拉框 */
+        .single-select-container {
+            position: relative;
+            min-width: 180px;
+        }
+
+        .single-select-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            min-height: 32px;
+        }
+
+        .single-select-trigger:hover {
+            border-color: #ccc;
+        }
+
+        .single-select-trigger .selected-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .single-select-trigger .arrow {
+            margin-left: 8px;
+            transition: transform 0.2s;
+        }
+
+        .single-select-trigger.open .arrow {
+            transform: rotate(180deg);
+        }
+
+        .single-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 4px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .single-select-dropdown.show {
+            display: block;
+        }
+
+        .single-select-option {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .single-select-option:hover {
+            background: #f5f5f5;
+        }
+
+        .single-select-option .tenant-name {
+            flex: 1;
+        }
+
+        .single-select-option .tenant-id {
+            color: #888;
+            font-size: 11px;
+        }
+
         .hidden {
             display: none !important;
         }
@@ -537,10 +617,13 @@
             <div class="menu-item" onclick="showKnowledgeBase()" id="kb-menu">
                 <span>📚</span> 知识库
             </div>
+            <div class="menu-item" onclick="showTenantManagement()" id="tenant-menu">
+                <span>🏢</span> 租户管理
+            </div>
         </div>
 
         <!-- 历史记录 -->
-        <div class="history-section">
+        <div class="history-section" id="history-section">
             <div class="history-title">历史记录</div>
             <div id="history-list">
                 <div style="font-size:12px;color:#888;padding:8px;">暂无记录</div>
@@ -552,7 +635,18 @@
     <div class="main">
         <!-- 对话页面 -->
         <div id="chat-page">
-            <div class="chat-header">AI 助手</div>
+            <div class="chat-header">
+                <span>AI 助手</span>
+                <div class="single-select-container" id="chat-tenant-container">
+                    <div class="single-select-trigger" onclick="toggleChatTenantSelect()">
+                        <span class="selected-text" id="chat-tenant-text">选择租户</span>
+                        <span class="arrow">▼</span>
+                    </div>
+                    <div class="single-select-dropdown" id="chat-tenant-dropdown">
+                        <!-- Options loaded dynamically -->
+                    </div>
+                </div>
+            </div>
 
             <div class="chat-messages" id="chat-messages">
                 <div class="message assistant">
@@ -584,12 +678,42 @@
                     <button class="upload-btn" onclick="showUploadModal()">上传文档</button>
                 </div>
 
-                <input type="text" class="tenant-input" id="kb-tenant-input"
-                       placeholder="租户ID" value="test_tenant" onchange="loadDocuments()">
+                <div class="single-select-container" id="kb-tenant-container" style="margin-bottom: 16px;">
+                    <div class="single-select-trigger" onclick="toggleKbTenantSelect()">
+                        <span class="selected-text" id="kb-tenant-text">选择租户</span>
+                        <span class="arrow">▼</span>
+                    </div>
+                    <div class="single-select-dropdown" id="kb-tenant-dropdown">
+                        <!-- Options loaded dynamically -->
+                    </div>
+                </div>
 
                 <div class="doc-list" id="doc-list">
                     <div style="text-align: center; color: #888; padding: 40px;">
                         暂无文档，请上传
+                    </div>
+                </div>
+
+                <!-- 分页控件 -->
+                <div class="pagination" id="doc-pagination" style="display: none; justify-content: center; align-items: center; gap: 8px; padding: 16px;">
+                    <button onclick="changePage(-1)" id="prev-page-btn" style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">上一页</button>
+                    <span id="page-info" style="font-size: 13px; color: #666;">1 / 1</span>
+                    <button onclick="changePage(1)" id="next-page-btn" style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">下一页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 租户管理页面 -->
+        <div id="tenant-page" class="hidden">
+            <div class="knowledge-base">
+                <div class="kb-header">
+                    <h1 class="kb-title">租户管理</h1>
+                    <button class="upload-btn" onclick="showAddTenantModal()">新增租户</button>
+                </div>
+
+                <div class="doc-list" id="tenant-list">
+                    <div style="text-align: center; color: #888; padding: 40px;">
+                        加载中...
                     </div>
                 </div>
             </div>
@@ -600,11 +724,27 @@
     <div class="modal" id="upload-modal">
         <div class="modal-content">
             <div class="modal-title">上传文档</div>
-            <input type="text" class="modal-input" id="upload-tenant-id" placeholder="租户ID" value="test_tenant">
+            <select class="modal-input" id="upload-tenant-id">
+                <option value="">选择租户</option>
+            </select>
             <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx">
             <div class="modal-buttons">
                 <button class="modal-btn cancel" onclick="hideUploadModal()">取消</button>
                 <button class="modal-btn confirm" onclick="uploadDocument()">上传</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加租户弹窗 -->
+    <div class="modal" id="add-tenant-modal">
+        <div class="modal-content">
+            <div class="modal-title">新增租户</div>
+            <input type="text" class="modal-input" id="tenant-name" placeholder="租户名称">
+            <input type="text" class="modal-input" id="tenant-id" placeholder="租户ID（如: tenant_001）">
+            <textarea class="modal-input" id="tenant-description" placeholder="描述（可选）" rows="3"></textarea>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="hideAddTenantModal()">取消</button>
+                <button class="modal-btn confirm" onclick="addTenant()">添加</button>
             </div>
         </div>
     </div>
@@ -622,8 +762,67 @@
         function showChat() {
             document.getElementById('chat-page').classList.remove('hidden');
             document.getElementById('kb-page').classList.add('hidden');
+            document.getElementById('tenant-page').classList.add('hidden');
+            document.getElementById('history-section').classList.remove('hidden');
             document.getElementById('chat-menu').classList.add('active');
             document.getElementById('kb-menu').classList.remove('active');
+            loadChatTenantSelect();
+            loadHistory();
+        }
+
+        // 当前选中的租户
+        let selectedTenant = null;
+        let currentDocPage = 1;
+        let docTotal = 0;
+        let docPageSize = 10;
+
+        async function loadChatTenantSelect() {
+            try {
+                const response = await fetch(`${API_BASE}/tenants/`);
+                const tenants = await response.json();
+
+                const dropdown = document.getElementById('chat-tenant-dropdown');
+                dropdown.innerHTML = tenants.map(tenant => `
+                    <div class="single-select-option" onclick="selectChatTenant('${tenant.tenant_id}', '${tenant.name}')">
+                        <span class="tenant-name">${tenant.name}</span>
+                        <span class="tenant-id">${tenant.tenant_id}</span>
+                    </div>
+                `).join('');
+
+                // Default select first tenant if none selected
+                if (!selectedTenant && tenants.length > 0) {
+                    selectedTenant = {id: tenants[0].tenant_id, name: tenants[0].name};
+                    updateChatTenantDisplay();
+                }
+            } catch (error) {
+                console.error('Failed to load tenants:', error);
+            }
+        }
+
+        function toggleChatTenantSelect() {
+            const trigger = document.querySelector('#chat-tenant-container .single-select-trigger');
+            const dropdown = document.getElementById('chat-tenant-dropdown');
+            trigger.classList.toggle('open');
+            dropdown.classList.toggle('show');
+        }
+
+        function selectChatTenant(tenantId, tenantName) {
+            selectedTenant = {id: tenantId, name: tenantName};
+            updateChatTenantDisplay();
+            // Close dropdown
+            const trigger = document.querySelector('#chat-tenant-container .single-select-trigger');
+            const dropdown = document.getElementById('chat-tenant-dropdown');
+            trigger.classList.remove('open');
+            dropdown.classList.remove('show');
+        }
+
+        function updateChatTenantDisplay() {
+            const trigger = document.querySelector('#chat-tenant-container .single-select-trigger .selected-text');
+            if (!selectedTenant) {
+                trigger.textContent = '选择租户';
+            } else {
+                trigger.textContent = selectedTenant.name;
+            }
             loadHistory();
         }
 
@@ -651,14 +850,90 @@
         function showKnowledgeBase() {
             document.getElementById('chat-page').classList.add('hidden');
             document.getElementById('kb-page').classList.remove('hidden');
+            document.getElementById('tenant-page').classList.add('hidden');
+            document.getElementById('history-section').classList.remove('hidden');
             document.getElementById('chat-menu').classList.remove('active');
             document.getElementById('kb-menu').classList.add('active');
+            loadTenantSelect();
+        }
+
+        async function loadTenantSelect() {
+            try {
+                const response = await fetch(`${API_BASE}/tenants/`);
+                const tenants = await response.json();
+
+                const dropdown = document.getElementById('kb-tenant-dropdown');
+                dropdown.innerHTML = tenants.map(tenant => `
+                    <div class="single-select-option" onclick="selectKbTenant('${tenant.tenant_id}', '${tenant.name}')">
+                        <span class="tenant-name">${tenant.name}</span>
+                        <span class="tenant-id">${tenant.tenant_id}</span>
+                    </div>
+                `).join('');
+
+                // Default select first tenant if none selected
+                if (tenants.length > 0 && !window.selectedTenantKb) {
+                    window.selectedTenantKb = {id: tenants[0].tenant_id, name: tenants[0].name};
+                    updateKbTenantDisplay();
+                    // Load documents after selecting default tenant
+                    loadDocuments();
+                } else if (window.selectedTenantKb) {
+                    // If tenant already selected, just load documents
+                    loadDocuments();
+                }
+            } catch (error) {
+                console.error('Failed to load tenants:', error);
+            }
+        }
+
+        function toggleKbTenantSelect() {
+            const trigger = document.querySelector('#kb-tenant-container .single-select-trigger');
+            const dropdown = document.getElementById('kb-tenant-dropdown');
+            trigger.classList.toggle('open');
+            dropdown.classList.toggle('show');
+        }
+
+        function selectKbTenant(tenantId, tenantName) {
+            window.selectedTenantKb = {id: tenantId, name: tenantName};
+            updateKbTenantDisplay();
+            // Close dropdown
+            const trigger = document.querySelector('#kb-tenant-container .single-select-trigger');
+            const dropdown = document.getElementById('kb-tenant-dropdown');
+            trigger.classList.remove('open');
+            dropdown.classList.remove('show');
+            // Reset to first page
+            currentDocPage = 1;
             loadDocuments();
         }
 
+        function updateKbTenantDisplay() {
+            const trigger = document.querySelector('#kb-tenant-container .single-select-trigger .selected-text');
+            if (!window.selectedTenantKb) {
+                trigger.textContent = '选择租户';
+            } else {
+                trigger.textContent = window.selectedTenantKb.name;
+            }
+        }
+
+        // 点击外部关闭下拉框
+        document.addEventListener('click', function(e) {
+            const chatContainer = document.getElementById('chat-tenant-container');
+            const kbContainer = document.getElementById('kb-tenant-container');
+
+            if (chatContainer && !chatContainer.contains(e.target)) {
+                chatContainer.querySelector('.single-select-trigger').classList.remove('open');
+                document.getElementById('chat-tenant-dropdown').classList.remove('show');
+            }
+            if (kbContainer && !kbContainer.contains(e.target)) {
+                kbContainer.querySelector('.single-select-trigger').classList.remove('open');
+                document.getElementById('kb-tenant-dropdown').classList.remove('show');
+            }
+        });
+
         // 加载历史记录
         async function loadHistory() {
-            const tenantId = document.getElementById('kb-tenant-input')?.value || 'test_tenant';
+            // Get tenant from selectedTenant
+            const tenantId = selectedTenant ? selectedTenant.id :
+                             'test_tenant';
             const listDiv = document.getElementById('history-list');
             console.log('Loading history for tenant:', tenantId);
 
@@ -773,8 +1048,15 @@
         }
 
         async function sendMessage() {
-            const tenantId = document.getElementById('kb-tenant-input')?.value || document.getElementById('upload-tenant-id')?.value || 'test_tenant';
+            const tenantId = selectedTenant ? selectedTenant.id :
+                             document.getElementById('upload-tenant-id')?.value ||
+                             'test_tenant';
             const question = document.getElementById('question-input').value.trim();
+
+            if (!tenantId) {
+                alert('请先选择租户');
+                return;
+            }
             if (!question) return;
 
             const messagesDiv = document.getElementById('chat-messages');
@@ -881,7 +1163,26 @@
         }
 
         // 上传文档
-        function showUploadModal() {
+        async function showUploadModal() {
+            // Load tenants into upload dropdown
+            const select = document.getElementById('upload-tenant-id');
+            try {
+                const response = await fetch(`${API_BASE}/tenants/`);
+                const tenants = await response.json();
+                select.innerHTML = '<option value="">选择租户</option>';
+                tenants.forEach(tenant => {
+                    const option = document.createElement('option');
+                    option.value = tenant.tenant_id;
+                    option.textContent = `${tenant.name} (${tenant.tenant_id})`;
+                    select.appendChild(option);
+                });
+                // Pre-select first tenant if available
+                if (tenants.length > 0) {
+                    select.value = tenants[0].tenant_id;
+                }
+            } catch (error) {
+                console.error('Failed to load tenants:', error);
+            }
             document.getElementById('upload-modal').classList.add('show');
         }
 
@@ -924,14 +1225,17 @@
 
         // 加载文档列表
         async function loadDocuments() {
-            const tenantId = document.getElementById('kb-tenant-input').value;
+            const tenantId = window.selectedTenantKb ? window.selectedTenantKb.id : '';
             const listDiv = document.getElementById('doc-list');
 
             listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载中...</div>';
 
             try {
-                const response = await fetch(`${API_BASE}/documents/?tenant_id=${tenantId}`);
-                const docs = await response.json();
+                const response = await fetch(`${API_BASE}/documents/?tenant_id=${tenantId}&page=${currentDocPage}&page_size=${docPageSize}`);
+                const data = await response.json();
+
+                const docs = data.results || [];
+                docTotal = data.total || 0;
 
                 if (docs.length > 0) {
                     listDiv.innerHTML = docs.map(doc => `
@@ -952,8 +1256,40 @@
                 } else {
                     listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">暂无文档，请上传</div>';
                 }
+
+                // Update pagination
+                updatePagination();
             } catch (error) {
                 listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 更新分页控件
+        function updatePagination() {
+            const pagination = document.getElementById('doc-pagination');
+            const pageInfo = document.getElementById('page-info');
+            const prevBtn = document.getElementById('prev-page-btn');
+            const nextBtn = document.getElementById('next-page-btn');
+
+            if (docTotal <= docPageSize) {
+                pagination.style.display = 'none';
+                return;
+            }
+
+            pagination.style.display = 'flex';
+            const totalPages = Math.ceil(docTotal / docPageSize);
+            pageInfo.textContent = `${currentDocPage} / ${totalPages}`;
+            prevBtn.disabled = currentDocPage <= 1;
+            nextBtn.disabled = currentDocPage >= totalPages;
+        }
+
+        // 切换分页
+        function changePage(delta) {
+            const totalPages = Math.ceil(docTotal / docPageSize);
+            const newPage = currentDocPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentDocPage = newPage;
+                loadDocuments();
             }
         }
 
@@ -969,6 +1305,116 @@
                 if (response.ok) {
                     alert('删除成功');
                     loadDocuments();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+
+        // ==================== 租户管理 ====================
+        function showTenantManagement() {
+            // 隐藏其他页面，显示租户管理页面
+            document.getElementById('chat-page').classList.add('hidden');
+            document.getElementById('kb-page').classList.add('hidden');
+            document.getElementById('tenant-page').classList.remove('hidden');
+
+            // 隐藏历史记录
+            document.getElementById('history-section').classList.add('hidden');
+
+            // 更新菜单选中状态
+            document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+            document.getElementById('tenant-menu').classList.add('active');
+
+            loadTenants();
+        }
+
+        async function loadTenants() {
+            const listDiv = document.getElementById('tenant-list');
+            listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/tenants/`);
+                const tenants = await response.json();
+
+                if (tenants.length > 0) {
+                    listDiv.innerHTML = tenants.map(tenant => `
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <span class="doc-icon">🏢</span>
+                                <div>
+                                    <div class="doc-name">${tenant.name}</div>
+                                    <div class="doc-date">ID: ${tenant.tenant_id}</div>
+                                    <div class="doc-date">创建时间: ${new Date(tenant.created_at).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <button class="delete-btn" onclick="deleteTenant('${tenant.id}')">删除</button>
+                        </div>
+                    `).join('');
+                } else {
+                    listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">暂无租户，请添加</div>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        function showAddTenantModal() {
+            document.getElementById('add-tenant-modal').classList.add('show');
+        }
+
+        function hideAddTenantModal() {
+            document.getElementById('add-tenant-modal').classList.remove('show');
+        }
+
+        async function addTenant() {
+            const name = document.getElementById('tenant-name').value;
+            const tenantId = document.getElementById('tenant-id').value;
+            const description = document.getElementById('tenant-description').value;
+
+            if (!name || !tenantId) {
+                alert('请填写租户名称和租户ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/tenants/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        tenant_id: tenantId,
+                        description: description
+                    })
+                });
+
+                if (response.ok) {
+                    alert('添加成功！');
+                    hideAddTenantModal();
+                    loadTenants();
+                } else {
+                    const data = await response.json();
+                    alert('添加失败: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                alert('添加失败: ' + error.message);
+            }
+        }
+
+        async function deleteTenant(tenantId) {
+            if (!confirm('确定要删除这个租户吗？')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/tenants/${tenantId}/`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('删除成功');
+                    loadTenants();
                 } else {
                     alert('删除失败');
                 }

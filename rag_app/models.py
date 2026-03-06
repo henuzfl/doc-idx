@@ -1,6 +1,20 @@
 import uuid
 from django.db import models
 
+class Tenant(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255, verbose_name="租户名称")
+    tenant_id = models.CharField(max_length=64, unique=True, db_index=True, verbose_name="租户ID")
+    description = models.TextField(blank=True, verbose_name="描述")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "租户"
+        verbose_name_plural = "租户"
+
+    def __str__(self):
+        return self.name
+
 class Document(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     file = models.FileField(upload_to='documents/')

@@ -3,7 +3,14 @@ import json
 from django.conf import settings
 from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader
 from llama_index.vector_stores.postgres import PGVectorStore
-from llama_index.postprocessor.dashscope_rerank import DashScopeRerank
+
+# DashScopeRerank may not be available in all versions, handle gracefully
+try:
+    from llama_index.postprocessors.dashscope_rerank import DashScopeRerank
+    HAS_RERANK = True
+except ImportError:
+    HAS_RERANK = False
+    DashScopeRerank = None
 
 
 def get_vector_index(table_name="llama_knowledge"):
@@ -82,12 +89,18 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
         filters=filters,
     )
 
-    # Rerank with gte-rerank-v2
-    reranker = DashScopeRerank(
-        model=settings.RERANK_MODEL,
-        api_key=os.getenv('DASHSCOPE_API_KEY'),
-        top_n=5,
-    )
+    # Rerank with gte-rerank-v2 (if available)
+    node_postprocessors = []
+    if HAS_RERANK and DashScopeRerank:
+        try:
+            reranker = DashScopeRerank(
+                model=settings.RERANK_MODEL,
+                api_key=os.getenv('DASHSCOPE_API_KEY'),
+                top_n=5,
+            )
+            node_postprocessors = [reranker]
+        except Exception as e:
+            print(f"Reranker initialization failed: {e}")
 
     # Custom system prompt
     system_prompt = """
@@ -107,16 +120,22 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
         system_prompt + "\n\n" + "Context information is below.\n---------------------\n{context_str}\n---------------------\nGiven the context information and not prior knowledge, answer the following question.\nQuestion: {query_str}\nAnswer: "
     )
 
-    # Query Engine with reranking and custom prompt
-    query_engine = index.as_query_engine(
-        node_postprocessors=[reranker],
-        text_qa_template=qa_template,
-    )
+    # Query Engine with optional reranking and custom prompt
+    query_kwargs = {
+        'text_qa_template': qa_template,
+        'filters': filters,  # Apply tenant filter
+    }
+    if node_postprocessors:
+        query_kwargs['node_postprocessors'] = node_postprocessors
+
+    query_engine = index.as_query_engine(**query_kwargs)
 
     response = query_engine.query(query)
 
     # Build sources JSON summary
     source_info = []
+    response_str = str(response).strip()
+
     if response.source_nodes:
         from rag_app.models import Document
         for node in response.source_nodes:
@@ -153,6 +172,13 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
         answer = answer.encode('utf-8', errors='replace').decode('utf-8')
     except:
         pass
+
+    # If still empty after all attempts, return a helpful message
+    if not answer or answer.strip() == "Empty Response":
+        if not source_info:
+            answer = "抱歉，您的知识库中没有任何文档。请先在知识库中上传文档，然后我可以回答您关于这些文档的问题。"
+        else:
+            answer = "抱歉，我无法从您提供的文档中找到相关的答案。"
 
     return answer, source_info
 

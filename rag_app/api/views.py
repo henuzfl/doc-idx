@@ -1,14 +1,22 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rag_app.models import Document, ChatSession, ChatMessage
-from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer
+from rag_app.models import Document, ChatSession, ChatMessage, Tenant
+from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, TenantSerializer
 from rag_app.services.llama_service import ask_question, delete_document_from_vector
 from rag_app.services.s3_service import s3_service
 from rag_app.services.celery_tasks import process_document
 from django.core.files.storage import FileSystemStorage
 import os
 import threading
+
+
+class TenantViewSet(viewsets.ModelViewSet):
+    queryset = Tenant.objects.all()
+    serializer_class = TenantSerializer
+
+    def get_queryset(self):
+        return Tenant.objects.order_by('-created_at')
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -20,7 +28,26 @@ class DocumentViewSet(viewsets.ModelViewSet):
         tenant_id = self.request.query_params.get('tenant_id')
         if tenant_id:
             queryset = queryset.filter(tenant_id=tenant_id)
+
         return queryset.order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        # Get total count for pagination info
+        tenant_id = request.query_params.get('tenant_id')
+        if tenant_id:
+            total = Document.objects.filter(tenant_id=tenant_id).count()
+        else:
+            total = Document.objects.count()
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'results': serializer.data,
+            'total': total,
+            'page': int(request.query_params.get('page', 1)),
+            'page_size': int(request.query_params.get('page_size', 10))
+        })
 
     def create(self, request, *args, **kwargs):
         # 1. Save document record first
