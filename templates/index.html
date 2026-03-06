@@ -187,6 +187,8 @@
             padding: 12px 16px;
             border-radius: 12px;
             line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .message.user .message-bubble {
@@ -198,6 +200,39 @@
         .message.assistant .message-bubble {
             background: #f7f7f7;
             border-top-left-radius: 4px;
+        }
+
+        .sources {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .source-item {
+            padding: 8px 12px;
+            background: #fafafa;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .source-file {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .source-content {
+            color: #666;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .source-score {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
         }
 
         .message .sources {
@@ -446,6 +481,40 @@
         .hidden {
             display: none !important;
         }
+
+        .history-section {
+            padding: 12px;
+            border-top: 1px solid #e5e5e5;
+            margin-top: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .history-title {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+            padding: 0 8px;
+        }
+
+        .history-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: background 0.2s;
+        }
+
+        .history-item:hover {
+            background: #e5e5e5;
+        }
+
+        .history-item.active {
+            background: #e5e5e5;
+        }
     </style>
 </head>
 <body>
@@ -457,7 +526,7 @@
             <span class="sidebar-title">AI 助手</span>
         </div>
 
-        <button class="new-chat-btn" onclick="showChat()">
+        <button class="new-chat-btn" onclick="newChat()">
             <span>💬</span> 新建对话
         </button>
 
@@ -467,6 +536,14 @@
             </div>
             <div class="menu-item" onclick="showKnowledgeBase()" id="kb-menu">
                 <span>📚</span> 知识库
+            </div>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="history-section">
+            <div class="history-title">历史记录</div>
+            <div id="history-list">
+                <div style="font-size:12px;color:#888;padding:8px;">暂无记录</div>
             </div>
         </div>
     </div>
@@ -534,6 +611,7 @@
 
     <script>
         const API_BASE = 'http://localhost:8000/api';
+        let currentSessionId = null; // 当前会话ID
 
         // Tab 切换
         function toggleSidebar() {
@@ -546,6 +624,28 @@
             document.getElementById('kb-page').classList.add('hidden');
             document.getElementById('chat-menu').classList.add('active');
             document.getElementById('kb-menu').classList.remove('active');
+            loadHistory();
+        }
+
+        function newChat() {
+            // 重置当前session
+            currentSessionId = null;
+
+            // 清空聊天记录
+            document.getElementById('chat-messages').innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-role">AI 助手</div>
+                        <div class="message-bubble">
+                            你好！我是 AI 助手。我可以回答你关于知识库中文档的问题。请先在知识库中上传文档，然后问我问题。
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('question-input').value = '';
+            showChat();
+            loadHistory();
         }
 
         function showKnowledgeBase() {
@@ -554,6 +654,114 @@
             document.getElementById('chat-menu').classList.remove('active');
             document.getElementById('kb-menu').classList.add('active');
             loadDocuments();
+        }
+
+        // 加载历史记录
+        async function loadHistory() {
+            const tenantId = document.getElementById('kb-tenant-input')?.value || 'test_tenant';
+            const listDiv = document.getElementById('history-list');
+            console.log('Loading history for tenant:', tenantId);
+
+            try {
+                const response = await fetch(`${API_BASE}/chat/?tenant_id=${tenantId}`);
+                const data = await response.json();
+                console.log('History data:', data);
+
+                // API returns array directly
+                const sessions = Array.isArray(data) ? data : [];
+                console.log('Sessions:', sessions.length);
+
+                if (sessions.length > 0) {
+                    // 只显示前10条记录
+                    const recentSessions = sessions.slice(0, 10);
+                    listDiv.innerHTML = recentSessions.map(session => {
+                        const title = session.title || '新对话';
+                        const time = new Date(session.created_at).toLocaleString('zh-CN', {
+                            month: 'numeric',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        return `
+                            <div class="history-item" onclick="loadChatSession('${session.id}')" title="${title}">
+                                <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</div>
+                                <div style="font-size:11px;color:#888;">${time}</div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    listDiv.innerHTML = '<div style="font-size:12px;color:#888;padding:8px;">暂无记录</div>';
+                }
+            } catch (error) {
+                console.error('Load history error:', error);
+                listDiv.innerHTML = '<div style="font-size:12px;color:#f00;padding:8px;">加载失败</div>';
+            }
+        }
+
+        // 加载指定会话
+        async function loadChatSession(sessionId) {
+            const tenantId = document.getElementById('kb-tenant-input')?.value || document.getElementById('upload-tenant-id')?.value || 'test_tenant';
+            const messagesDiv = document.getElementById('chat-messages');
+
+            // 设置当前session ID
+            currentSessionId = sessionId;
+
+            try {
+                // 获取会话消息
+                const response = await fetch(`${API_BASE}/chat/${sessionId}/messages/`);
+                const messages = await response.json();
+
+                if (messages.length > 0) {
+                    messagesDiv.innerHTML = messages.map(msg => {
+                        const isUser = msg.role === 'user';
+
+                        // 格式化来源（仅assistant消息）
+                        let sourcesHtml = '';
+                        if (!isUser && msg.sources && msg.sources.length > 0) {
+                            sourcesHtml = '<div class="sources"><strong>参考资料:</strong><br>';
+                            msg.sources.forEach((s, i) => {
+                                let fileName = s.metadata?.original_filename || s.metadata?.file_name || '未知文件';
+                                const pageLabel = s.metadata?.page_label || '';
+                                const content = s.content_preview?.substring(0, 150) || '';
+                                const score = (s.score * 100).toFixed(1);
+                                sourcesHtml += `
+                                    <div class="source-item">
+                                        <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''}</div>
+                                        <div class="source-content">${content}...</div>
+                                        <div class="source-score">相关性: ${score}%</div>
+                                    </div>
+                                `;
+                            });
+                            sourcesHtml += '</div>';
+                        }
+
+                        return `
+                            <div class="message ${isUser ? 'user' : 'assistant'}">
+                                <div class="message-avatar">${isUser ? '你' : 'AI'}</div>
+                                <div class="message-content">
+                                    <div class="message-role">${isUser ? '你' : 'AI 助手'}</div>
+                                    <div class="message-bubble">${msg.content}</div>
+                                    ${sourcesHtml}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    messagesDiv.innerHTML = `
+                        <div class="message assistant">
+                            <div class="message-avatar">AI</div>
+                            <div class="message-content">
+                                <div class="message-role">AI 助手</div>
+                                <div class="message-bubble">你好！我是 AI 助手。</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                showChat();
+            } catch (error) {
+                console.error('Load session error:', error);
+            }
         }
 
         // 发送消息
@@ -565,7 +773,7 @@
         }
 
         async function sendMessage() {
-            const tenantId = document.getElementById('kb-tenant-input').value || 'test_tenant';
+            const tenantId = document.getElementById('kb-tenant-input')?.value || document.getElementById('upload-tenant-id')?.value || 'test_tenant';
             const question = document.getElementById('question-input').value.trim();
             if (!question) return;
 
@@ -602,24 +810,61 @@
             document.getElementById('question-input').value = '';
 
             try {
+                // 如果有当前session，使用它；否则创建新session
+                const requestBody = {
+                    tenant_id: tenantId,
+                    query: question
+                };
+                if (currentSessionId) {
+                    requestBody.session_id = currentSessionId;
+                }
+
                 const response = await fetch(`${API_BASE}/chat/ask/`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tenant_id: tenantId, query: question})
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await response.json();
                 document.getElementById('loading').remove();
 
                 if (response.ok) {
+                    // 设置当前session ID
+                    if (data.session_id) {
+                        currentSessionId = data.session_id;
+                    }
+
                     const assistantMsg = document.createElement('div');
                     assistantMsg.className = 'message assistant';
+
+                    // 格式化来源
+                    let sourcesHtml = '';
+                    if (data.sources && data.sources.length > 0) {
+                        sourcesHtml = '<div class="sources"><strong>参考资料:</strong><br>';
+                        data.sources.forEach((s, i) => {
+                            // 优先使用 original_filename，否则使用 file_name
+                            let fileName = s.metadata?.original_filename || s.metadata?.file_name || '未知文件';
+
+                            const pageLabel = s.metadata?.page_label || '';
+                            const content = s.content_preview?.substring(0, 150) || '';
+                            const score = (s.score * 100).toFixed(1);
+                            sourcesHtml += `
+                                <div class="source-item">
+                                    <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''}</div>
+                                    <div class="source-content">${content}...</div>
+                                    <div class="source-score">相关性: ${score}%</div>
+                                </div>
+                            `;
+                        });
+                        sourcesHtml += '</div>';
+                    }
+
                     assistantMsg.innerHTML = `
                         <div class="message-avatar">AI</div>
                         <div class="message-content">
                             <div class="message-role">AI 助手</div>
                             <div class="message-bubble">${data.answer}</div>
-                            <div class="sources">来源: ${data.sources?.map(s => s.content_preview?.substring(0, 50) || '').join(', ') || '无'}</div>
+                            ${sourcesHtml}
                         </div>
                     `;
                     messagesDiv.appendChild(assistantMsg);
@@ -731,6 +976,12 @@
                 alert('删除失败: ' + error.message);
             }
         }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            showChat();
+            loadHistory();
+        });
     </script>
 </body>
 </html>

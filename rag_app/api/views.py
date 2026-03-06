@@ -3,10 +3,13 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rag_app.models import Document, ChatSession, ChatMessage
 from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer
-from rag_app.services.llama_service import ingest_document, ask_question, delete_document_from_vector
+from rag_app.services.llama_service import ask_question, delete_document_from_vector
+from rag_app.services.s3_service import s3_service
+from rag_app.services.celery_tasks import process_document
 from django.core.files.storage import FileSystemStorage
 import os
-import json
+import threading
+
 
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.all()
@@ -20,26 +23,37 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-created_at')
 
     def create(self, request, *args, **kwargs):
-        # 1. Save document record
+        # 1. Save document record first
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        document = serializer.save(status='PROCESSING', filename=request.FILES['file'].name)
 
-        # 2. Trigger Ingestion (ideal to use Celery here for async, keeping sync for demo)
+        # Save with PENDING status
+        document = serializer.save(status='PENDING', filename=request.FILES['file'].name)
+
+        # Get local file path
         file_path = document.file.path
-        
+        s3_key = f"{document.tenant_id}/{document.id}/{document.filename}"
+
         try:
-            metadata = {
-                'doc_id': str(document.id),
-                'tenant_id': document.tenant_id,
-            }
-            # Calls the LlamaIndex service to chunk and embed into pgVector
-            ingest_document(file_path, metadata)
-            
-            document.status = 'COMPLETED'
-            document.save()
+            # 2. Upload to S3
+            if s3_service.is_configured():
+                s3_service.upload_file(file_path, s3_key)
+                # Update document with S3 key
+                document.file.name = s3_key
+                document.save()
+
+            # 3. Run vectorization in background thread
+            def vectorize():
+                try:
+                    process_document(str(document.id))
+                except Exception as e:
+                    print(f"Vectorization error: {e}")
+
+            thread = threading.Thread(target=vectorize)
+            thread.start()
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-            
+
         except Exception as e:
             document.status = 'FAILED'
             document.save()
@@ -50,18 +64,65 @@ class DocumentViewSet(viewsets.ModelViewSet):
             instance = self.get_object()
             # Delete from vector store
             delete_document_from_vector(str(instance.id), instance.tenant_id)
-            # Delete file
+
+            # Delete from S3
+            s3_key = str(instance.file)
+            if s3_key and s3_service.is_configured():
+                s3_service.delete_file(s3_key)
+
+            # Delete local file if exists
             if instance.file:
                 instance.file.delete()
+
             # Delete from database
             self.perform_destroy(instance)
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['post'])
+    def retry(self, request):
+        """Retry vectorizing a failed document"""
+        doc_id = request.data.get('document_id')
+        if not doc_id:
+            return Response({'error': 'document_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            document = Document.objects.get(id=doc_id)
+            document.status = 'PENDING'
+            document.save()
+            process_document.delay(str(document.id))
+            return Response({'status': 'queued', 'document_id': str(document.id)})
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatSession.objects.all()
     serializer_class = ChatSessionSerializer
+
+    def get_queryset(self):
+        queryset = ChatSession.objects.all()
+        tenant_id = self.request.query_params.get('tenant_id')
+        if tenant_id:
+            queryset = queryset.filter(tenant_id=tenant_id)
+        return queryset.order_by('-created_at')
+
+    @action(detail=True, methods=['get'])
+    def messages(self, request, pk=None):
+        """Get messages for a specific chat session"""
+        session = self.get_object()
+        messages = ChatMessage.objects.filter(session=session).order_by('created_at')
+        data = [{
+            'id': str(m.id),
+            'role': m.role,
+            'content': m.content,
+            'sources': m.sources,
+            'created_at': m.created_at.isoformat()
+        } for m in messages]
+        return Response(data)
 
     @action(detail=False, methods=['post'])
     def ask(self, request):

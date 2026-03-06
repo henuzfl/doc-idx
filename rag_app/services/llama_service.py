@@ -118,6 +118,7 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
     # Build sources JSON summary
     source_info = []
     if response.source_nodes:
+        from rag_app.models import Document
         for node in response.source_nodes:
             content = node.node.get_content()[:200]
             # Fix encoding issues
@@ -125,9 +126,24 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
                 content = content.encode('utf-8', errors='replace').decode('utf-8')
             except:
                 content = str(content)
+
+            # Get doc_id from metadata and resolve actual filename from database
+            doc_id = node.node.metadata.get('doc_id', '')
+            original_filename = ''
+            if doc_id:
+                try:
+                    doc = Document.objects.get(id=doc_id)
+                    original_filename = doc.filename
+                except Document.DoesNotExist:
+                    pass
+
+            metadata = dict(node.node.metadata)
+            if original_filename:
+                metadata['original_filename'] = original_filename
+
             source_info.append({
                 'score': node.score,
-                'metadata': node.node.metadata,
+                'metadata': metadata,
                 'content_preview': content
             })
 
