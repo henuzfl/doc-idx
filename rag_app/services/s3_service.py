@@ -60,6 +60,31 @@ class S3Service:
             print(f"S3 upload error: {e}")
             return None
 
+    def upload_file_obj(self, file_obj, s3_key):
+        """
+        Upload a file object (in memory) to S3
+
+        Args:
+            file_obj: File object (e.g., Django UploadedFile)
+            s3_key: S3 object key
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.is_configured():
+            return None
+
+        try:
+            self.s3_client.upload_fileobj(file_obj, self.bucket_name, s3_key)
+            if self.endpoint_url:
+                return f"{self.endpoint_url}/{self.bucket_name}/{s3_key}"
+            elif self.region:
+                return f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
+            return s3_key
+        except ClientError as e:
+            print(f"S3 upload error: {e}")
+            return None
+
     def download_file(self, s3_key, local_path):
         """
         Download a file from S3

@@ -61,26 +61,36 @@ class DocumentViewSet(viewsets.ModelViewSet):
         })
 
     def create(self, request, *args, **kwargs):
-        # 1. Save document record first
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Save with PENDING status
-        document = serializer.save(status='PENDING', filename=request.FILES['file'].name)
+        uploaded_file = request.FILES['file']
+        filename = uploaded_file.name
+        tenant_id = request.data.get('tenant_id')
 
-        # Get local file path
-        file_path = document.file.path
-        s3_key = f"{document.tenant_id}/{document.id}/{document.filename}"
+        # 生成 S3 key
+        import uuid
+        doc_id = str(uuid.uuid4())
+        s3_key = f"{tenant_id}/{doc_id}/{filename}"
 
         try:
-            # 2. Upload to S3
+            # 直接上传到 S3（不保存到本地）
             if s3_service.is_configured():
-                s3_service.upload_file(file_path, s3_key)
-                # Update document with S3 key
-                document.file.name = s3_key
-                document.save()
+                # 使用内存文件上传到 S3
+                s3_service.upload_file_obj(uploaded_file, s3_key)
+                # 保存文档记录，S3 key 作为文件路径
+                document = serializer.save(
+                    id=doc_id,
+                    status='PENDING',
+                    filename=filename,
+                    tenant_id=tenant_id,
+                    file=s3_key
+                )
+            else:
+                # 如果没有配置 S3，保存到本地
+                document = serializer.save(status='PENDING', filename=filename)
 
-            # 3. Run vectorization in background thread
+            # 后台向量化
             def vectorize():
                 try:
                     process_document(str(document.id))
@@ -93,8 +103,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            document.status = 'FAILED'
-            document.save()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def destroy(self, request, *args, **kwargs):
