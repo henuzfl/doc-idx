@@ -1,0 +1,10 @@
+Django>=4.2,<5.0
+djangorestframework
+psycopg[binary]
+llama-index
+llama-index-vector-stores-postgres
+llama-index-llms-dashscope
+llama-index-embeddings-dashscope
+celery
+redis
+python-dotenv

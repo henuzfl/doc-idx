@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* 左侧边栏 */
+        .sidebar {
+            width: 260px;
+            background: #f7f7f7;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e5e5e5;
+            transition: width 0.3s ease;
+            overflow: hidden;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-title {
+            font-weight: 600;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .new-chat-btn {
+            margin: 12px 16px;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .new-chat-btn:hover {
+            background: #e5e5e5;
+        }
+
+        .menu-items {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .menu-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .menu-item:hover {
+            background: #e5e5e5;
+        }
+
+        .menu-item.active {
+            background: #e5e5e5;
+        }
+
+        /* 折叠按钮 */
+        .toggle-btn {
+            position: fixed;
+            left: 10px;
+            top: 10px;
+            z-index: 100;
+            width: 32px;
+            height: 32px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .toggle-btn:hover {
+            background: #f0f0f0;
+        }
+
+        /* 主聊天区域 */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .chat-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .message {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: #5436da;
+            color: white;
+        }
+
+        .message.assistant .message-avatar {
+            background: #19c37d;
+            color: white;
+        }
+
+        .message-content {
+            flex: 1;
+        }
+
+        .message .role {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .message.user .message-role {
+            text-align: right;
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+        }
+
+        .message.user .message-bubble {
+            background: #5436da;
+            color: white;
+            border-top-right-radius: 4px;
+        }
+
+        .message.assistant .message-bubble {
+            background: #f7f7f7;
+            border-top-left-radius: 4px;
+        }
+
+        .message .sources {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .chat-input-area {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .chat-input-container {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .chat-input {
+            width: 100%;
+            padding: 12px 16px;
+            padding-right: 60px;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            min-height: 48px;
+            max-height: 200px;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #5436da;
+        }
+
+        .send-btn {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: 32px;
+            height: 32px;
+            background: #5436da;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+        }
+
+        .send-btn:hover {
+            background: #4338ca;
+        }
+
+        .send-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 知识库页面 */
+        .knowledge-base {
+            padding: 24px;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .kb-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .kb-title {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .upload-btn {
+            padding: 10px 20px;
+            background: #5436da;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .upload-btn:hover {
+            background: #4338ca;
+        }
+
+        .tenant-input {
+            padding: 10px 16px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 200px;
+            margin-bottom: 20px;
+        }
+
+        .doc-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .doc-item {
+            padding: 16px;
+            background: #f7f7f7;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .doc-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .doc-icon {
+            font-size: 24px;
+        }
+
+        .doc-name {
+            font-weight: 500;
+        }
+
+        .doc-date {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .doc-status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .doc-status.completed {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .doc-status.failed {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .doc-status.processing {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .delete-btn {
+            padding: 6px 12px;
+            background: #fee2e2;
+            color: #dc2626;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .delete-btn:hover {
+            background: #fecaca;
+        }
+
+        /* 上传弹窗 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            width: 400px;
+            max-width: 90%;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .modal-btn.cancel {
+            background: #f3f4f6;
+            border: none;
+        }
+
+        .modal-btn.confirm {
+            background: #5436da;
+            color: white;
+            border: none;
+        }
+
+        .modal-btn:hover {
+            opacity: 0.9;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
+
+    <!-- 左侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title">AI 助手</span>
+        </div>
+
+        <button class="new-chat-btn" onclick="showChat()">
+            <span>💬</span> 新建对话
+        </button>
+
+        <div class="menu-items">
+            <div class="menu-item active" onclick="showChat()" id="chat-menu">
+                <span>💬</span> 对话
+            </div>
+            <div class="menu-item" onclick="showKnowledgeBase()" id="kb-menu">
+                <span>📚</span> 知识库
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main">
+        <!-- 对话页面 -->
+        <div id="chat-page">
+            <div class="chat-header">AI 助手</div>
+
+            <div class="chat-messages" id="chat-messages">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <div class="message-role">AI 助手</div>
+                        <div class="message-bubble">
+                            你好！我是 AI 助手。我可以回答你关于知识库中文档的问题。请先在知识库中上传文档，然后问我问题。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="chat-input-container">
+                    <input type="text" class="chat-input" id="question-input"
+                           placeholder="发送消息..."
+                           onkeypress="handleKeyPress(event)">
+                    <button class="send-btn" onclick="sendMessage()" id="send-btn">➤</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 知识库页面 -->
+        <div id="kb-page" class="hidden">
+            <div class="knowledge-base">
+                <div class="kb-header">
+                    <h1 class="kb-title">知识库</h1>
+                    <button class="upload-btn" onclick="showUploadModal()">上传文档</button>
+                </div>
+
+                <input type="text" class="tenant-input" id="kb-tenant-input"
+                       placeholder="租户ID" value="test_tenant" onchange="loadDocuments()">
+
+                <div class="doc-list" id="doc-list">
+                    <div style="text-align: center; color: #888; padding: 40px;">
+                        暂无文档，请上传
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上传弹窗 -->
+    <div class="modal" id="upload-modal">
+        <div class="modal-content">
+            <div class="modal-title">上传文档</div>
+            <input type="text" class="modal-input" id="upload-tenant-id" placeholder="租户ID" value="test_tenant">
+            <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx">
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="hideUploadModal()">取消</button>
+                <button class="modal-btn confirm" onclick="uploadDocument()">上传</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+
+        // Tab 切换
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+        }
+
+        function showChat() {
+            document.getElementById('chat-page').classList.remove('hidden');
+            document.getElementById('kb-page').classList.add('hidden');
+            document.getElementById('chat-menu').classList.add('active');
+            document.getElementById('kb-menu').classList.remove('active');
+        }
+
+        function showKnowledgeBase() {
+            document.getElementById('chat-page').classList.add('hidden');
+            document.getElementById('kb-page').classList.remove('hidden');
+            document.getElementById('chat-menu').classList.remove('active');
+            document.getElementById('kb-menu').classList.add('active');
+            loadDocuments();
+        }
+
+        // 发送消息
+        function handleKeyPress(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const tenantId = document.getElementById('kb-tenant-input').value || 'test_tenant';
+            const question = document.getElementById('question-input').value.trim();
+            if (!question) return;
+
+            const messagesDiv = document.getElementById('chat-messages');
+            const sendBtn = document.getElementById('send-btn');
+
+            // 添加用户消息
+            const userMsg = document.createElement('div');
+            userMsg.className = 'message user';
+            userMsg.innerHTML = `
+                <div class="message-avatar">你</div>
+                <div class="message-content">
+                    <div class="message-role">你</div>
+                    <div class="message-bubble">${question}</div>
+                </div>
+            `;
+            messagesDiv.appendChild(userMsg);
+
+            // 添加加载中
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'message assistant';
+            loadingMsg.id = 'loading';
+            loadingMsg.innerHTML = `
+                <div class="message-avatar">AI</div>
+                <div class="message-content">
+                    <div class="message-role">AI 助手</div>
+                    <div class="message-bubble">思考中...</div>
+                </div>
+            `;
+            messagesDiv.appendChild(loadingMsg);
+
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            sendBtn.disabled = true;
+            document.getElementById('question-input').value = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/chat/ask/`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tenant_id: tenantId, query: question})
+                });
+
+                const data = await response.json();
+                document.getElementById('loading').remove();
+
+                if (response.ok) {
+                    const assistantMsg = document.createElement('div');
+                    assistantMsg.className = 'message assistant';
+                    assistantMsg.innerHTML = `
+                        <div class="message-avatar">AI</div>
+                        <div class="message-content">
+                            <div class="message-role">AI 助手</div>
+                            <div class="message-bubble">${data.answer}</div>
+                            <div class="sources">来源: ${data.sources?.map(s => s.content_preview?.substring(0, 50) || '').join(', ') || '无'}</div>
+                        </div>
+                    `;
+                    messagesDiv.appendChild(assistantMsg);
+                } else {
+                    alert('回答失败: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                document.getElementById('loading').remove();
+                alert('回答失败: ' + error.message);
+            } finally {
+                sendBtn.disabled = false;
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        // 上传文档
+        function showUploadModal() {
+            document.getElementById('upload-modal').classList.add('show');
+        }
+
+        function hideUploadModal() {
+            document.getElementById('upload-modal').classList.remove('show');
+        }
+
+        async function uploadDocument() {
+            const tenantId = document.getElementById('upload-tenant-id').value;
+            const fileInput = document.getElementById('upload-file');
+
+            if (!tenantId || !fileInput.files[0]) {
+                alert('请填写租户ID并选择文件');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('tenant_id', tenantId);
+            formData.append('filename', fileInput.files[0].name);
+
+            try {
+                const response = await fetch(`${API_BASE}/documents/`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert('上传成功！');
+                    hideUploadModal();
+                    loadDocuments();
+                } else {
+                    const data = await response.json();
+                    alert('上传失败: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                alert('上传失败: ' + error.message);
+            }
+        }
+
+        // 加载文档列表
+        async function loadDocuments() {
+            const tenantId = document.getElementById('kb-tenant-input').value;
+            const listDiv = document.getElementById('doc-list');
+
+            listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载中...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/documents/?tenant_id=${tenantId}`);
+                const docs = await response.json();
+
+                if (docs.length > 0) {
+                    listDiv.innerHTML = docs.map(doc => `
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <span class="doc-icon">📄</span>
+                                <div>
+                                    <div class="doc-name">${doc.filename}</div>
+                                    <div class="doc-date">${new Date(doc.created_at).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span class="doc-status ${doc.status.toLowerCase()}">${doc.status}</span>
+                                <button class="delete-btn" onclick="deleteDocument('${doc.id}')">删除</button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">暂无文档，请上传</div>';
+                }
+            } catch (error) {
+                listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 删除文档
+        async function deleteDocument(docId) {
+            if (!confirm('确定要删除这个文档吗？')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/documents/${docId}/`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('删除成功');
+                    loadDocuments();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
