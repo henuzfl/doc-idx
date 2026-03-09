@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+
+# 环境文件
+.env
+.env.local
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 文档
+*.md
+*.puml
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 其他
+docments/
+*.sqlite3
