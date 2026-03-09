@@ -4,13 +4,22 @@ from django.conf import settings
 from llama_index.core import VectorStoreIndex, StorageContext, SimpleDirectoryReader
 from llama_index.vector_stores.postgres import PGVectorStore
 
-# DashScopeRerank may not be available in all versions, handle gracefully
+# 尝试导入 DashScope Rerank
 try:
     from llama_index.postprocessors.dashscope_rerank import DashScopeRerank
     HAS_RERANK = True
 except ImportError:
     HAS_RERANK = False
     DashScopeRerank = None
+
+# 尝试直接使用 DashScope API 进行 rerank
+try:
+    import dashscope
+    from dashscope import TextReRank
+    HAS_DASHSCOPE_RERANK = True
+except ImportError:
+    HAS_DASHSCOPE_RERANK = False
+    TextReRank = None
 
 
 # 缓存 vector index 实例
@@ -102,18 +111,25 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
         filters=filters,
     )
 
-    # Rerank with gte-rerank-v2 (if available)
+    # Rerank with gte-rerank-v2
     node_postprocessors = []
+    rerank_top_n = 5
+
+    # 先尝试使用 llama-index 包
     if HAS_RERANK and DashScopeRerank:
         try:
             reranker = DashScopeRerank(
                 model=settings.RERANK_MODEL,
                 api_key=os.getenv('DASHSCOPE_API_KEY'),
-                top_n=5,
+                top_n=rerank_top_n,
             )
             node_postprocessors = [reranker]
         except Exception as e:
             print(f"Reranker initialization failed: {e}")
+            node_postprocessors = []
+
+    # 如果没有使用 postprocessor，设置一个标志在后续处理
+    use_custom_rerank = len(node_postprocessors) == 0 and HAS_DASHSCOPE_RERANK
 
     # Custom system prompt
     system_prompt = """
@@ -144,6 +160,41 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
     query_engine = index.as_query_engine(**query_kwargs)
 
     response = query_engine.query(query)
+
+    # 如果没有使用 postprocessor，尝试使用 DashScope API 进行 rerank
+    if len(node_postprocessors) == 0 and HAS_DASHSCOPE_RERANK and response.source_nodes and len(response.source_nodes) > 1:
+        try:
+            # 准备 rerank 文档
+            documents = [node.node.get_content() for node in response.source_nodes]
+            api_key = os.getenv('DASHSCOPE_API_KEY')
+            if api_key:
+                dashscope.api_key = api_key
+                # 调用 DashScope rerank API
+                rerank_result = TextReRank.call(
+                    model='gte-rerank-v2',
+                    query=query,
+                    documents=documents,
+                    top_n=rerank_top_n
+                )
+                if rerank_result.status_code == 200:
+                    # 根据 rerank 结果重新排序 source_nodes
+                    reranked_indices = rerank_result.output['results']
+                    reranked_nodes = []
+                    seen = set()
+                    for r in reranked_indices:
+                        idx = r['index']
+                        if idx < len(response.source_nodes) and idx not in seen:
+                            node = response.source_nodes[idx]
+                            node.score = 1.0 - r['relevance_score']  # 转换分数
+                            reranked_nodes.append(node)
+                            seen.add(idx)
+                    # 添加未在 rerank 结果中的节点
+                    for i, node in enumerate(response.source_nodes):
+                        if i not in seen:
+                            reranked_nodes.append(node)
+                    response.source_nodes = reranked_nodes
+        except Exception as e:
+            print(f"Custom rerank failed: {e}")
 
     # Build sources JSON summary
     source_info = []
