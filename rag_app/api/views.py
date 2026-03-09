@@ -29,6 +29,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if tenant_id:
             queryset = queryset.filter(tenant_id=tenant_id)
 
+        # 搜索文件名
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(filename__icontains=search)
+
+        # 按状态筛选
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
         # 分页支持
         try:
             page = int(self.request.query_params.get('page', 0))
@@ -45,12 +55,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
 
-        # 获取总数
+        # 获取总数（应用筛选条件后）
         tenant_id = request.query_params.get('tenant_id')
+        search = request.query_params.get('search')
+        status = request.query_params.get('status')
+
+        # 构建基础筛选
+        filters = {}
         if tenant_id:
-            total = Document.objects.filter(tenant_id=tenant_id).count()
-        else:
-            total = Document.objects.count()
+            filters['tenant_id'] = tenant_id
+        if search:
+            filters['filename__icontains'] = search
+        if status:
+            filters['status'] = status
+
+        total = Document.objects.filter(**filters).count()
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({
@@ -73,11 +92,51 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def _single_upload(self, request):
         """单文件上传"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # 支持 files（批量）或 file（单文件）两种字段名
+        files = request.FILES.getlist('files')
+        uploaded_file = files[0] if files else request.FILES.get('file')
 
-        uploaded_file = request.FILES['file']
-        return self._process_upload(request, uploaded_file, serializer)
+        if not uploaded_file:
+            return Response({'error': 'No file was submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 手动构造数据，避免 serializer 验证问题
+        import uuid
+        tenant_id = request.data.get('tenant_id')
+        doc_id = str(uuid.uuid4())
+        s3_key = f"{tenant_id}/{doc_id}/{uploaded_file.name}"
+
+        try:
+            if s3_service.is_configured():
+                s3_service.upload_file_obj(uploaded_file, s3_key)
+                document = Document.objects.create(
+                    id=doc_id,
+                    status='PENDING',
+                    filename=uploaded_file.name,
+                    tenant_id=tenant_id,
+                    file=s3_key
+                )
+            else:
+                document = Document.objects.create(
+                    status='PENDING',
+                    filename=uploaded_file.name,
+                    tenant_id=tenant_id
+                )
+
+            # 后台向量化
+            def vectorize():
+                try:
+                    process_document(str(document.id))
+                except Exception as e:
+                    print(f"Vectorization error: {e}")
+
+            thread = threading.Thread(target=vectorize)
+            thread.start()
+
+            serializer = DocumentSerializer(document)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _batch_upload(self, request, files):
         """批量上传多个文件"""

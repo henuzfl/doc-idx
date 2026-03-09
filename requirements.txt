@@ -5,6 +5,9 @@ llama-index
 llama-index-vector-stores-postgres
 llama-index-llms-dashscope
 llama-index-embeddings-dashscope
+llama-index-readers-file
+pypdf
+python-docx
 celery
 redis
 python-dotenv

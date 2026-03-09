@@ -42,6 +42,7 @@ def process_document(document_id):
             's3_key': s3_key,
         }
 
+        print(f"[ProcessDocument] Starting vectorization for document: {document_id}, file: {file_path}")
         ingest_document(file_path, metadata)
 
         # Clean up temp file if downloaded from S3
@@ -58,6 +59,9 @@ def process_document(document_id):
         return {'status': 'error', 'message': f'Document {document_id} not found'}
     except Exception as e:
         # Update document status to failed
+        print(f"[ProcessDocument] Error: {e}")
+        import traceback
+        traceback.print_exc()
         try:
             document = Document.objects.get(id=document_id)
             document.status = 'FAILED'

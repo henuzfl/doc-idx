@@ -127,18 +127,83 @@ def ingest_document(file_path: str, doc_metadata: dict):
     Loads a document from the file path, injects custom metadata (tenant_id, doc_id),
     and inserts it into the Vector Store.
     """
-    # 1. Extract text from the file
-    documents = SimpleDirectoryReader(input_files=[file_path]).load_data()
+    import os
+
+    print(f"[Ingest] Starting to process file: {file_path}")
+
+    # 获取文件扩展名
+    ext = os.path.splitext(file_path)[1].lower()
+    print(f"[Ingest] File extension: {ext}")
+
+    documents = []
+
+    try:
+        if ext == '.pdf':
+            # PDF 文件
+            try:
+                from llama_index.readers.file import PDFReader
+                reader = PDFReader()
+                documents = reader.load_data(file=file_path)
+                print(f"[Ingest] PDF loaded successfully, {len(documents)} pages")
+            except Exception as e:
+                print(f"[Ingest] PDFReader failed: {e}, trying pypdf")
+                import pypdf
+                from llama_index.core import Document
+                reader = pypdf.PdfReader(file_path)
+                text = "\n".join([page.extract_text() for page in reader.pages])
+                documents = [Document(text=text)]
+                print(f"[Ingest] pypdf loaded, text length: {len(text)}")
+
+        elif ext in ['.docx', '.doc']:
+            # Word 文件
+            try:
+                from llama_index.readers.file import DocxReader
+                reader = DocxReader()
+                documents = reader.load_data(file_path)
+                print(f"[Ingest] Docx loaded successfully")
+            except Exception as e:
+                print(f"[Ingest] DocxReader failed: {e}, trying python-docx")
+                from docx import Document as DocxDocument
+                doc = DocxDocument(file_path)
+                text = "\n".join([para.text for para in doc.paragraphs])
+                from llama_index.core import Document
+                documents = [Document(text=text)]
+                print(f"[Ingest] python-docx loaded, text length: {len(text)}")
+
+        elif ext in ['.txt', '.md', '.json']:
+            # 文本文件
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            from llama_index.core import Document
+            documents = [Document(text=text)]
+            print(f"[Ingest] Text file loaded, text length: {len(text)}")
+
+        else:
+            # 默认使用 SimpleDirectoryReader
+            documents = SimpleDirectoryReader(input_files=[file_path]).load_data()
+            print(f"[Ingest] SimpleDirectoryReader loaded {len(documents)} documents")
+
+    except Exception as e:
+        print(f"[Ingest] Error reading file: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+    if not documents:
+        print(f"[Ingest] Warning: No documents extracted!")
+        return False
 
     # 2. Inject enterprise metadata (for data isolation and filtering)
     for doc in documents:
         doc.metadata.update(doc_metadata)
 
     # 3. Write into Vector Store (pgVector)
+    print(f"[Ingest] Inserting {len(documents)} documents into vector store")
     index = get_vector_index()
     for doc in documents:
         index.insert(doc)
 
+    print(f"[Ingest] Completed successfully!")
     return True
 
 

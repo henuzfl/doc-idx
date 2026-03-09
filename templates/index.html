@@ -437,15 +437,16 @@
         }
 
         .doc-list {
-            display: grid;
-            gap: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .doc-item {
-            padding: 20px;
+            padding: 16px 20px;
             background: white;
             border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
+            border-radius: var(--radius-md);
             display: flex;
             align-items: center;
             transition: all 0.2s;
@@ -453,9 +454,18 @@
         }
 
         .doc-item:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
+            background: #f9fafb;
             border-color: var(--primary);
+        }
+
+        .doc-checkbox {
+            margin-right: 12px;
+        }
+
+        .doc-checkbox input {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
         }
             justify-content: space-between;
             align-items: center;
@@ -467,17 +477,63 @@
             gap: 12px;
         }
 
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
         .doc-icon {
-            font-size: 24px;
+            font-size: 36px;
         }
 
         .doc-name {
             font-weight: 500;
+            font-size: 14px;
+            color: #1f2937;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 8px;
+        }
+
+        .doc-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
         }
 
         .doc-date {
             font-size: 12px;
-            color: #888;
+            color: #9ca3af;
+        }
+
+        .doc-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #f3f4f6;
+        }
+
+        .action-btn {
+            padding: 6px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .action-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
         }
 
         .doc-status {
@@ -822,17 +878,47 @@
             <div class="knowledge-base">
                 <div class="kb-header">
                     <h1 class="kb-title">知识库</h1>
-                    <button class="upload-btn" onclick="showUploadModal()">上传文档</button>
                 </div>
 
-                <div class="single-select-container" id="kb-tenant-container" style="margin-bottom: 16px;">
-                    <div class="single-select-trigger" onclick="toggleKbTenantSelect()">
-                        <span class="selected-text" id="kb-tenant-text">选择租户</span>
-                        <span class="arrow">▼</span>
+                <!-- 搜索筛选栏（一行） -->
+                <div class="doc-filter-bar" style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+                    <!-- 租户选择 -->
+                    <div class="single-select-container" id="kb-tenant-container" style="min-width: 150px;">
+                        <div class="single-select-trigger" onclick="toggleKbTenantSelect()">
+                            <span class="selected-text" id="kb-tenant-text">选择租户</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="single-select-dropdown" id="kb-tenant-dropdown">
+                            <!-- Options loaded dynamically -->
+                        </div>
                     </div>
-                    <div class="single-select-dropdown" id="kb-tenant-dropdown">
-                        <!-- Options loaded dynamically -->
-                    </div>
+
+                    <!-- 文件名搜索 -->
+                    <input type="text"
+                           id="doc-search-input"
+                           placeholder="搜索文件名..."
+                           style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 14px;"
+                           onkeyup="if(event.key==='Enter') filterDocuments()">
+
+                    <!-- 状态筛选 -->
+                    <select id="doc-status-filter"
+                            style="padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 14px; min-width: 100px;"
+                            onchange="filterDocuments()">
+                        <option value="">全部状态</option>
+                        <option value="COMPLETED">已完成</option>
+                        <option value="PROCESSING">处理中</option>
+                        <option value="PENDING">等待中</option>
+                        <option value="FAILED">失败</option>
+                    </select>
+
+                    <!-- 搜索按钮 -->
+                    <button onclick="filterDocuments()"
+                            style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                        搜索
+                    </button>
+
+                    <!-- 上传文档按钮 -->
+                    <button class="upload-btn" onclick="showUploadModal()" style="margin-left: auto;">上传文档</button>
                 </div>
 
                 <div class="doc-list" id="doc-list">
@@ -1382,36 +1468,174 @@
             }
         }
 
+        // 获取文件图标
+        function getFileIcon(filename) {
+            if (!filename) return '📄';
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'pdf': '📕',
+                'doc': '📘',
+                'docx': '📘',
+                'txt': '📝',
+                'md': '📝',
+                'xls': '📗',
+                'xlsx': '📗',
+                'ppt': '📙',
+                'pptx': '📙',
+                'jpg': '🖼️',
+                'jpeg': '🖼️',
+                'png': '🖼️',
+                'gif': '🖼️'
+            };
+            return icons[ext] || '📄';
+        }
+
+        // 获取状态文本
+        function getStatusText(status) {
+            const statusMap = {
+                'COMPLETED': '已完成',
+                'completed': '已完成',
+                'PROCESSING': '处理中',
+                'processing': '处理中',
+                'FAILED': '失败',
+                'failed': '失败',
+                'PENDING': '等待中',
+                'pending': '等待中'
+            };
+            return statusMap[status] || status;
+        }
+
+        // 格式化日期
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+            if (days === 0) return '今天';
+            if (days === 1) return '昨天';
+            if (days < 7) return `${days}天前`;
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        // 搜索/筛选文档
+        function filterDocuments() {
+            currentDocPage = 1;
+            loadDocuments();
+        }
+
+        // 全选/取消全选
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('doc-select-all');
+            const checkboxes = document.querySelectorAll('.doc-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateSelectedCount();
+        }
+
+        // 更新已选数量
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.doc-checkbox:checked');
+            const countEl = document.getElementById('selected-count');
+            if (countEl) {
+                countEl.textContent = checkboxes.length;
+            }
+        }
+
+        // 批量删除文档
+        async function batchDeleteDocuments() {
+            const checkboxes = document.querySelectorAll('.doc-checkbox:checked');
+            const docIds = Array.from(checkboxes).map(cb => cb.value);
+
+            if (docIds.length === 0) {
+                alert('请选择要删除的文档');
+                return;
+            }
+
+            if (!confirm(`确定要删除选中的 ${docIds.length} 个文档吗？`)) return;
+
+            try {
+                let deletedCount = 0;
+                for (const docId of docIds) {
+                    const response = await fetch(`${API_BASE}/documents/${docId}/`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        deletedCount++;
+                    }
+                }
+                alert(`成功删除 ${deletedCount} 个文档`);
+                loadDocuments();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+
+        // 监听复选框变化
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('doc-checkbox')) {
+                updateSelectedCount();
+            }
+        });
+
         // 加载文档列表
         async function loadDocuments() {
             const tenantId = window.selectedTenantKb ? window.selectedTenantKb.id : '';
+            const searchKeyword = document.getElementById('doc-search-input')?.value || '';
+            const statusFilter = document.getElementById('doc-status-filter')?.value || '';
             const listDiv = document.getElementById('doc-list');
 
             listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载中...</div>';
 
             try {
-                const response = await fetch(`${API_BASE}/documents/?tenant_id=${tenantId}&page=${currentDocPage}&page_size=${docPageSize}`);
+                // 构建查询参数
+                let url = `${API_BASE}/documents/?tenant_id=${tenantId}&page=${currentDocPage}&page_size=${docPageSize}`;
+                if (searchKeyword) {
+                    url += `&search=${encodeURIComponent(searchKeyword)}`;
+                }
+                if (statusFilter) {
+                    url += `&status=${statusFilter}`;
+                }
+
+                const response = await fetch(url);
                 const data = await response.json();
 
                 const docs = data.results || [];
                 docTotal = data.total || 0;
 
                 if (docs.length > 0) {
-                    listDiv.innerHTML = docs.map(doc => `
+                    listDiv.innerHTML = `
+                        <div class="doc-item doc-item-header" style="background: #f9fafb; font-weight: 500; color: #6b7280; font-size: 13px;">
+                            <input type="checkbox" id="doc-select-all" style="margin-right: 12px;" onclick="toggleSelectAll()">
+                            <span style="flex: 1;">文件名</span>
+                            <span style="width: 100px; text-align: center;">状态</span>
+                            <span style="width: 100px; text-align: center;">时间</span>
+                            <span style="width: 100px; text-align: center;">操作</span>
+                        </div>
+                    ` + docs.map(doc => `
                         <div class="doc-item">
-                            <div class="doc-info">
-                                <span class="doc-icon">📄</span>
-                                <div>
-                                    <div class="doc-name">${doc.filename}</div>
-                                    <div class="doc-date">${new Date(doc.created_at).toLocaleString()}</div>
-                                </div>
+                            <input type="checkbox" class="doc-checkbox" value="${doc.id}" style="margin-right: 12px;">
+                            <span class="doc-icon" style="font-size: 20px; margin-right: 12px;">${getFileIcon(doc.filename)}</span>
+                            <div class="doc-info" style="flex: 1; min-width: 0;">
+                                <div class="doc-name" style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${doc.filename}</div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <span class="doc-status ${doc.status.toLowerCase()}">${doc.status}</span>
-                                <button class="delete-btn" onclick="deleteDocument('${doc.id}')">删除</button>
-                            </div>
+                            <span class="doc-status ${doc.status.toLowerCase()}" style="width: 100px; text-align: center;">${getStatusText(doc.status)}</span>
+                            <span class="doc-date" style="color: #888; font-size: 12px; width: 100px; text-align: center;">${formatDate(doc.created_at)}</span>
+                            <button class="delete-btn" style="padding: 6px 12px; font-size: 12px; width: 100px; text-align: center;" onclick="deleteDocument('${doc.id}')">删除</button>
                         </div>
                     `).join('');
+
+                    // 添加批量删除按钮
+                    if (docs.length > 0) {
+                        listDiv.innerHTML += `
+                            <div class="doc-item" style="justify-content: space-between; background: #f9fafb;">
+                                <span style="color: #6b7280; font-size: 13px;">已选 <span id="selected-count">0</span> 项</span>
+                                <button onclick="batchDeleteDocuments()" style="padding: 6px 16px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">批量删除</button>
+                            </div>
+                        `;
+                    }
                 } else {
                     listDiv.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">暂无文档，请上传</div>';
                 }
