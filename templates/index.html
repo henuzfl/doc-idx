@@ -877,7 +877,8 @@
             <select class="modal-input" id="upload-tenant-id">
                 <option value="">选择租户</option>
             </select>
-            <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx">
+            <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx" multiple>
+            <div style="font-size: 12px; color: #888; margin-top: 4px;">支持多文件选择（按住 Ctrl/Command 选择多个）</div>
             <div class="modal-buttons">
                 <button class="modal-btn cancel" onclick="hideUploadModal()">取消</button>
                 <button class="modal-btn confirm" onclick="uploadDocument()">上传</button>
@@ -917,7 +918,7 @@
             document.getElementById('chat-menu').classList.add('active');
             document.getElementById('kb-menu').classList.remove('active');
             loadChatTenantSelect();
-            loadHistory();
+            // loadHistory 会在 loadChatTenantSelect 内部调用
         }
 
         // 当前选中的租户
@@ -943,6 +944,9 @@
                 if (!selectedTenant && tenants.length > 0) {
                     selectedTenant = { id: tenants[0].tenant_id, name: tenants[0].name };
                     updateChatTenantDisplay();
+                } else if (tenants.length === 0) {
+                    // 没有租户时也加载历史（会显示空）
+                    loadHistory();
                 }
             } catch (error) {
                 console.error('Failed to load tenants:', error);
@@ -1340,15 +1344,17 @@
             const tenantId = document.getElementById('upload-tenant-id').value;
             const fileInput = document.getElementById('upload-file');
 
-            if (!tenantId || !fileInput.files[0]) {
-                alert('请填写租户ID并选择文件');
+            if (!tenantId || !fileInput.files.length) {
+                alert('请选择租户并选择文件');
                 return;
             }
 
+            // 使用 FormData 批量上传
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            for (let i = 0; i < fileInput.files.length; i++) {
+                formData.append('files', fileInput.files[i]);
+            }
             formData.append('tenant_id', tenantId);
-            formData.append('filename', fileInput.files[0].name);
 
             try {
                 const response = await fetch(`${API_BASE}/documents/`, {
@@ -1357,8 +1363,15 @@
                 });
 
                 if (response.ok) {
-                    alert('上传成功！');
+                    const data = await response.json();
+                    if (data.uploaded && data.uploaded.length > 1) {
+                        alert(`上传成功！共上传 ${data.uploaded.length} 个文件`);
+                    } else {
+                        alert('上传成功！');
+                    }
                     hideUploadModal();
+                    // 清空文件选择
+                    fileInput.value = '';
                     loadDocuments();
                 } else {
                     const data = await response.json();
@@ -1572,7 +1585,7 @@
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function () {
             showChat();
-            loadHistory();
+            // loadHistory 会在 loadChatTenantSelect 内部调用
         });
     </script>
 </body>

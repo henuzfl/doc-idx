@@ -22,8 +22,61 @@ except ImportError:
     TextReRank = None
 
 
-# 缓存 vector index 实例
+# 缓存 vector index 和 query engine 实例
 _vector_index_cache = {}
+_query_engine_cache = {}
+
+
+def get_query_engine(tenant_id: str):
+    """
+    获取缓存的 Query Engine，避免每次查询都创建新实例
+    """
+    cache_key = f"qe_{tenant_id}"
+    if cache_key in _query_engine_cache:
+        return _query_engine_cache[cache_key]
+
+    index = get_vector_index()
+
+    # Data Isolation: Only retrieve context matching the tenant_id
+    from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
+    filters = MetadataFilters(
+        filters=[ExactMatchFilter(key="tenant_id", value=tenant_id)]
+    )
+
+    # 降低 similarity_top_k 以减少检索时间
+    retriever = index.as_retriever(
+        similarity_top_k=5,  # 降低从 10 到 5
+        filters=filters,
+    )
+
+    # Custom system prompt
+    system_prompt = """
+    你是一个乐于助人的助手。
+使用以下内容作为你所学习的知识，放在<context></context> XML标签内。
+<context>
+{{#context#}}
+</context>
+回答用户时：
+如果你不知道，就直说你不知道。如果你在不确定的时候不知道，就寻求澄清。
+避免提及你是从上下文中获取的信息。
+并根据用户问题的语言来回答。
+    """
+
+    # Custom QA template
+    from llama_index.core import PromptTemplate
+    qa_template = PromptTemplate(
+        system_prompt + "\n\n" + "Context information is below.\n---------------------\n{context_str}\n---------------------\nGiven the context information and not prior knowledge, answer the following question.\nQuestion: {query_str}\nAnswer: "
+    )
+
+    # 创建 Query Engine（不带 rerank，减少延迟）
+    query_engine = index.as_query_engine(
+        text_qa_template=qa_template,
+        filters=filters,
+    )
+
+    # 缓存 query engine
+    _query_engine_cache[cache_key] = query_engine
+    return query_engine
 
 
 def get_vector_index(table_name="llama_knowledge"):
@@ -89,80 +142,31 @@ def ingest_document(file_path: str, doc_metadata: dict):
     return True
 
 
-def ask_question(query: str, tenant_id: str, chat_history=None):
+def ask_question(query: str, tenant_id: str, chat_history=None, use_rerank=True):
     """
-    Queries using Vector Search with Rerank.
-    - Vector Search: semantic similarity search
-    - Rerank: Uses gte-rerank-v2 to improve relevance
+    优化后的查询函数 - 使用缓存的 Query Engine
+
+    参数:
+        query: 用户问题
+        tenant_id: 租户ID（用于数据隔离）
+        chat_history: 聊天历史（暂未使用）
+        use_rerank: 是否使用 rerank（关闭可提升速度）
+
+    性能优化:
+    - 使用缓存的 Query Engine，避免重复创建
+    - similarity_top_k 从 10 降低到 5
+    - 可选关闭 rerank 以提升响应速度
     """
-    from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
-    from llama_index.core import PromptTemplate
+    # 使用缓存的 Query Engine
+    query_engine = get_query_engine(tenant_id)
 
-    index = get_vector_index()
-
-    # Data Isolation: Only retrieve context matching the tenant_id
-    filters = MetadataFilters(
-        filters=[ExactMatchFilter(key="tenant_id", value=tenant_id)]
-    )
-
-    # Vector Retriever
-    retriever = index.as_retriever(
-        similarity_top_k=10,
-        filters=filters,
-    )
-
-    # Rerank with gte-rerank-v2
-    node_postprocessors = []
-    rerank_top_n = 5
-
-    # 先尝试使用 llama-index 包
-    if HAS_RERANK and DashScopeRerank:
-        try:
-            reranker = DashScopeRerank(
-                model=settings.RERANK_MODEL,
-                api_key=os.getenv('DASHSCOPE_API_KEY'),
-                top_n=rerank_top_n,
-            )
-            node_postprocessors = [reranker]
-        except Exception as e:
-            print(f"Reranker initialization failed: {e}")
-            node_postprocessors = []
-
-    # 如果没有使用 postprocessor，设置一个标志在后续处理
-    use_custom_rerank = len(node_postprocessors) == 0 and HAS_DASHSCOPE_RERANK
-
-    # Custom system prompt
-    system_prompt = """
-    你是一个乐于助人的助手。
-使用以下内容作为你所学习的知识，放在<context></context> XML标签内。
-<context>
-{{#context#}}
-</context>
-回答用户时：
-如果你不知道，就直说你不知道。如果你在不确定的时候不知道，就寻求澄清。
-避免提及你是从上下文中获取的信息。
-并根据用户问题的语言来回答。
-    """
-
-    # Custom QA template with system prompt
-    qa_template = PromptTemplate(
-        system_prompt + "\n\n" + "Context information is below.\n---------------------\n{context_str}\n---------------------\nGiven the context information and not prior knowledge, answer the following question.\nQuestion: {query_str}\nAnswer: "
-    )
-
-    # Query Engine with optional reranking and custom prompt
-    query_kwargs = {
-        'text_qa_template': qa_template,
-        'filters': filters,  # Apply tenant filter
-    }
-    if node_postprocessors:
-        query_kwargs['node_postprocessors'] = node_postprocessors
-
-    query_engine = index.as_query_engine(**query_kwargs)
-
+    # 直接查询
     response = query_engine.query(query)
 
-    # 如果没有使用 postprocessor，尝试使用 DashScope API 进行 rerank
-    if len(node_postprocessors) == 0 and HAS_DASHSCOPE_RERANK and response.source_nodes and len(response.source_nodes) > 1:
+    rerank_top_n = 5
+
+    # 可选的 rerank
+    if use_rerank and HAS_DASHSCOPE_RERANK and response.source_nodes and len(response.source_nodes) > 1:
         try:
             # 准备 rerank 文档
             documents = [node.node.get_content() for node in response.source_nodes]

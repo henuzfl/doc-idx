@@ -24,3 +24,10 @@ class ChatSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
         fields = ['id', 'tenant_id', 'title', 'created_at', 'messages']
+
+
+class ChatSessionListSerializer(serializers.ModelSerializer):
+    """仅返回标题的轻量级序列化器"""
+    class Meta:
+        model = ChatSession
+        fields = ['id', 'tenant_id', 'title', 'created_at']

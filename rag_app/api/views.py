@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rag_app.models import Document, ChatSession, ChatMessage, Tenant
-from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, TenantSerializer
+from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, TenantSerializer, ChatSessionListSerializer
 from rag_app.services.llama_service import ask_question, delete_document_from_vector
 from rag_app.services.s3_service import s3_service
 from rag_app.services.celery_tasks import process_document
@@ -61,15 +61,91 @@ class DocumentViewSet(viewsets.ModelViewSet):
         })
 
     def create(self, request, *args, **kwargs):
+        # 检查是否为批量上传
+        files = request.FILES.getlist('files')
+
+        if files and len(files) > 1:
+            # 批量上传
+            return self._batch_upload(request, files)
+        else:
+            # 单文件上传
+            return self._single_upload(request)
+
+    def _single_upload(self, request):
+        """单文件上传"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         uploaded_file = request.FILES['file']
+        return self._process_upload(request, uploaded_file, serializer)
+
+    def _batch_upload(self, request, files):
+        """批量上传多个文件"""
+        import uuid
+        tenant_id = request.data.get('tenant_id')
+        uploaded_docs = []
+        errors = []
+
+        for uploaded_file in files:
+            try:
+                doc_id = str(uuid.uuid4())
+                s3_key = f"{tenant_id}/{doc_id}/{uploaded_file.name}"
+
+                # 直接上传到 S3
+                if s3_service.is_configured():
+                    s3_service.upload_file_obj(uploaded_file, s3_key)
+                    document = Document.objects.create(
+                        id=doc_id,
+                        status='PENDING',
+                        filename=uploaded_file.name,
+                        tenant_id=tenant_id,
+                        file=s3_key
+                    )
+                else:
+                    document = Document.objects.create(
+                        status='PENDING',
+                        filename=uploaded_file.name,
+                        tenant_id=tenant_id
+                    )
+
+                # 后台向量化
+                def vectorize(doc_id):
+                    try:
+                        process_document(str(doc_id))
+                    except Exception as e:
+                        print(f"Vectorization error: {e}")
+
+                thread = threading.Thread(target=vectorize, args=(str(document.id),))
+                thread.start()
+
+                uploaded_docs.append({
+                    'id': str(document.id),
+                    'filename': document.filename,
+                    'status': document.status
+                })
+
+            except Exception as e:
+                errors.append({
+                    'filename': uploaded_file.name,
+                    'error': str(e)
+                })
+
+        return Response({
+            'uploaded': uploaded_docs,
+            'errors': errors,
+            'total': len(files),
+            'success': len(uploaded_docs),
+            'failed': len(errors)
+        }, status=status.HTTP_201_CREATED)
+
+    def _process_upload(self, request, uploaded_file, serializer):
+        """处理单个文件上传"""
+        import uuid
+
         filename = uploaded_file.name
         tenant_id = request.data.get('tenant_id')
 
         # 生成 S3 key
-        import uuid
         doc_id = str(uuid.uuid4())
         s3_key = f"{tenant_id}/{doc_id}/{filename}"
 
@@ -155,6 +231,12 @@ class ChatViewSet(viewsets.ModelViewSet):
         if tenant_id:
             queryset = queryset.filter(tenant_id=tenant_id)
         return queryset.order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        # 只返回标题列表，不返回 messages
+        queryset = self.get_queryset()
+        serializer = ChatSessionListSerializer(queryset, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None):
