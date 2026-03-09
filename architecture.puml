@@ -1,0 +1,40 @@
+@startuml Doc-Index Architecture
+
+title Document Q&A System Architecture
+
+package "Frontend" {
+    [HTML/JS UI] as UI
+}
+
+package "Django Backend" {
+    [API Layer] as API
+    [Models] as Models
+}
+
+package "Services" {
+    [LlamaIndex Service] as Ll    [S3amaSVC
+ Service] as S3SVC
+    [Async Tasks] as Tasks
+}
+
+package "Data Layer" {
+    database "PostgreSQL\n(Relational)" as RDB
+    database "PostgreSQL + pgVector\n(Vector Store)" as VecDB
+    storage "MinIO/S3\n(Object Storage)" as S3
+}
+
+package "External" {
+    [DashScope\n(LLM & Embedding)] as DashScope
+}
+
+UI -> API
+API -> Models
+API -> LlamaSVC
+API -> S3SVC
+LlamaSVC -> Tasks
+Tasks -> VecDB
+LlamaSVC -> DashScope
+Models -> RDB
+S3SVC -> S3
+
+@enduml

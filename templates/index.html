@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 助手</title>
+    <title>Stitch Docs | AI Knowledge Assistant</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap"
+        rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         * {
             margin: 0;
@@ -417,7 +426,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             align-items: center;
             justify-content: center;
             z-index: 1000;
@@ -526,7 +535,7 @@
             background: white;
             border: 1px solid #e5e5e5;
             border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             max-height: 200px;
             overflow-y: auto;
             z-index: 1000;
@@ -597,6 +606,7 @@
         }
     </style>
 </head>
+
 <body>
     <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
 
@@ -662,9 +672,8 @@
 
             <div class="chat-input-area">
                 <div class="chat-input-container">
-                    <input type="text" class="chat-input" id="question-input"
-                           placeholder="发送消息..."
-                           onkeypress="handleKeyPress(event)">
+                    <input type="text" class="chat-input" id="question-input" placeholder="发送消息..."
+                        onkeypress="handleKeyPress(event)">
                     <button class="send-btn" onclick="sendMessage()" id="send-btn">➤</button>
                 </div>
             </div>
@@ -695,10 +704,13 @@
                 </div>
 
                 <!-- 分页控件 -->
-                <div class="pagination" id="doc-pagination" style="display: none; justify-content: center; align-items: center; gap: 8px; padding: 16px;">
-                    <button onclick="changePage(-1)" id="prev-page-btn" style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">上一页</button>
+                <div class="pagination" id="doc-pagination"
+                    style="display: none; justify-content: center; align-items: center; gap: 8px; padding: 16px;">
+                    <button onclick="changePage(-1)" id="prev-page-btn"
+                        style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">上一页</button>
                     <span id="page-info" style="font-size: 13px; color: #666;">1 / 1</span>
-                    <button onclick="changePage(1)" id="next-page-btn" style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">下一页</button>
+                    <button onclick="changePage(1)" id="next-page-btn"
+                        style="padding: 6px 12px; border: 1px solid #e5e5e5; background: white; border-radius: 4px; cursor: pointer;">下一页</button>
                 </div>
             </div>
         </div>
@@ -750,7 +762,7 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8000/api';
+        const API_BASE = '/api';
         let currentSessionId = null; // 当前会话ID
 
         // Tab 切换
@@ -791,7 +803,7 @@
 
                 // Default select first tenant if none selected
                 if (!selectedTenant && tenants.length > 0) {
-                    selectedTenant = {id: tenants[0].tenant_id, name: tenants[0].name};
+                    selectedTenant = { id: tenants[0].tenant_id, name: tenants[0].name };
                     updateChatTenantDisplay();
                 }
             } catch (error) {
@@ -807,7 +819,7 @@
         }
 
         function selectChatTenant(tenantId, tenantName) {
-            selectedTenant = {id: tenantId, name: tenantName};
+            selectedTenant = { id: tenantId, name: tenantName };
             updateChatTenantDisplay();
             // Close dropdown
             const trigger = document.querySelector('#chat-tenant-container .single-select-trigger');
@@ -872,7 +884,7 @@
 
                 // Default select first tenant if none selected
                 if (tenants.length > 0 && !window.selectedTenantKb) {
-                    window.selectedTenantKb = {id: tenants[0].tenant_id, name: tenants[0].name};
+                    window.selectedTenantKb = { id: tenants[0].tenant_id, name: tenants[0].name };
                     updateKbTenantDisplay();
                     // Load documents after selecting default tenant
                     loadDocuments();
@@ -893,7 +905,7 @@
         }
 
         function selectKbTenant(tenantId, tenantName) {
-            window.selectedTenantKb = {id: tenantId, name: tenantName};
+            window.selectedTenantKb = { id: tenantId, name: tenantName };
             updateKbTenantDisplay();
             // Close dropdown
             const trigger = document.querySelector('#kb-tenant-container .single-select-trigger');
@@ -915,7 +927,7 @@
         }
 
         // 点击外部关闭下拉框
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
             const chatContainer = document.getElementById('chat-tenant-container');
             const kbContainer = document.getElementById('kb-tenant-container');
 
@@ -1045,8 +1057,8 @@
 
         async function sendMessage() {
             const tenantId = selectedTenant ? selectedTenant.id :
-                             document.getElementById('upload-tenant-id')?.value ||
-                             'test_tenant';
+                document.getElementById('upload-tenant-id')?.value ||
+                'test_tenant';
             const question = document.getElementById('question-input').value.trim();
 
             if (!tenantId) {
@@ -1099,7 +1111,7 @@
 
                 const response = await fetch(`${API_BASE}/chat/ask/`, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
 
@@ -1420,10 +1432,11 @@
         }
 
         // 页面加载完成后初始化
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             showChat();
             loadHistory();
         });
     </script>
 </body>
+
 </html>
