@@ -177,6 +177,7 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
                     top_n=rerank_top_n
                 )
                 if rerank_result.status_code == 200:
+                    print(f"[Rerank] Success - got {len(rerank_result.output['results'])} results")
                     # 根据 rerank 结果重新排序 source_nodes
                     reranked_indices = rerank_result.output['results']
                     reranked_nodes = []
@@ -185,7 +186,8 @@ def ask_question(query: str, tenant_id: str, chat_history=None):
                         idx = r['index']
                         if idx < len(response.source_nodes) and idx not in seen:
                             node = response.source_nodes[idx]
-                            node.score = 1.0 - r['relevance_score']  # 转换分数
+                            # relevance_score 已经是 0-1 的分数，越高越相关，直接使用
+                            node.score = r['relevance_score']
                             reranked_nodes.append(node)
                             seen.add(idx)
                     # 添加未在 rerank 结果中的节点
