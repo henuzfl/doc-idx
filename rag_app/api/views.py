@@ -1,12 +1,39 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
+from django.views.decorators.http import require_http_methods
 from rag_app.models import Document, ChatSession, ChatMessage, Tenant
 from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, TenantSerializer, ChatSessionListSerializer
 from rag_app.services.llama_service import ask_question, delete_document_from_vector
 from rag_app.services.s3_service import s3_service
 from rag_app.services.celery_tasks import process_document
 import threading
+import tempfile
+import os
+import re
+import time
+
+
+def sanitize_filename(filename: str) -> str:
+    """将文件名转换为安全的 ASCII 名称，保留文件扩展名"""
+    # 分离文件名和扩展名
+    name, ext = os.path.splitext(filename)
+    if not ext:
+        ext = ''
+
+    # 将中文字符替换为拼音或时间戳
+    # 检查是否包含非 ASCII 字符
+    if not name.isascii():
+        # 使用时间戳 + 随机数作为名称
+        safe_name = f"doc_{int(time.time())}_{hash(name) % 10000}"
+    else:
+        # 保留原始名称，但移除不安全字符
+        safe_name = re.sub(r'[^\w\-_.]', '_', name)
+
+    return safe_name + ext
 
 
 class TenantViewSet(viewsets.ModelViewSet):
@@ -103,7 +130,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         import uuid
         tenant_id = request.data.get('tenant_id')
         doc_id = str(uuid.uuid4())
-        s3_key = f"{tenant_id}/{doc_id}/{uploaded_file.name}"
+        safe_filename = sanitize_filename(uploaded_file.name)
+        s3_key = f"{tenant_id}/{doc_id}/{safe_filename}"
 
         try:
             if s3_service.is_configured():
@@ -111,7 +139,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 document = Document.objects.create(
                     id=doc_id,
                     status='PENDING',
-                    filename=uploaded_file.name,
+                    filename=safe_filename,
                     tenant_id=tenant_id,
                     file=s3_key
                 )
@@ -148,7 +176,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         for uploaded_file in files:
             try:
                 doc_id = str(uuid.uuid4())
-                s3_key = f"{tenant_id}/{doc_id}/{uploaded_file.name}"
+                safe_filename = sanitize_filename(uploaded_file.name)
+                s3_key = f"{tenant_id}/{doc_id}/{safe_filename}"
 
                 # 直接上传到 S3
                 if s3_service.is_configured():
@@ -156,7 +185,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     document = Document.objects.create(
                         id=doc_id,
                         status='PENDING',
-                        filename=uploaded_file.name,
+                        filename=safe_filename,
                         tenant_id=tenant_id,
                         file=s3_key
                     )
@@ -202,11 +231,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
         import uuid
 
         filename = uploaded_file.name
+        safe_filename = sanitize_filename(filename)
         tenant_id = request.data.get('tenant_id')
 
         # 生成 S3 key
         doc_id = str(uuid.uuid4())
-        s3_key = f"{tenant_id}/{doc_id}/{filename}"
+        s3_key = f"{tenant_id}/{doc_id}/{safe_filename}"
 
         try:
             # 直接上传到 S3（不保存到本地）
@@ -217,13 +247,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 document = serializer.save(
                     id=doc_id,
                     status='PENDING',
-                    filename=filename,
+                    filename=safe_filename,
                     tenant_id=tenant_id,
                     file=s3_key
                 )
             else:
                 # 如果没有配置 S3，保存到本地
-                document = serializer.save(status='PENDING', filename=filename)
+                document = serializer.save(status='PENDING', filename=safe_filename)
 
             # 后台向量化
             def vectorize():
@@ -279,7 +309,64 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """Download document file from S3"""
+        try:
+            document = self.get_object()
+            s3_key = str(document.file)
 
+            # 只支持 S3 文件下载
+            if not s3_service.is_configured():
+                return Response({'error': 'S3 not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            if '/' not in s3_key:
+                return Response({'error': 'Not a S3 file'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # 获取文件后缀
+            ext = os.path.splitext(document.filename)[1]
+            # 使用 mkdtemp 创建临时目录
+            temp_dir = tempfile.mkdtemp()
+            temp_path = os.path.join(temp_dir, document.filename + ext)
+
+            if s3_service.download_file(s3_key, temp_path):
+                # 读取文件内容
+                with open(temp_path, 'rb') as f:
+                    file_content = f.read()
+
+                # 清理临时文件
+                try:
+                    os.remove(temp_path)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+
+                # 返回文件
+                from django.http import HttpResponse
+
+                # 获取 content-type（根据文件扩展名）
+                content_type = 'application/octet-stream'
+                if document.filename.lower().endswith('.pdf'):
+                    content_type = 'application/pdf'
+                elif document.filename.lower().endswith(('.jpg', '.jpeg')):
+                    content_type = 'image/jpeg'
+                elif document.filename.lower().endswith('.png'):
+                    content_type = 'image/png'
+
+                # 使用 HttpResponse 直接返回二进制内容
+                response = HttpResponse(file_content, content_type=content_type)
+
+                # 构造 Content-Disposition header，先对中文进行 URL 编码
+                from urllib.parse import quote
+                ascii_filename = quote(document.filename, safe='')
+                response['Content-Disposition'] = f'attachment; filename="{document.filename}"; filename*=UTF-8\'\'{ascii_filename}'
+
+                return response
+            else:
+                return Response({'error': 'Failed to download from S3'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Http404:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
 class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatSession.objects.all()
     serializer_class = ChatSessionSerializer
@@ -366,3 +453,67 @@ class ChatViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import traceback
             return Response({'error': str(e), 'trace': traceback.format_exc()}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# 独立的文件下载视图 (使用 Django HttpResponse 避免 DRF 编码问题)
+@require_http_methods(["GET"])
+def download_file(request, doc_id):
+    """独立文件下载视图"""
+    try:
+        document = Document.objects.get(id=doc_id)
+        s3_key = str(document.file)
+
+        # 只支持 S3 文件下载
+        if not s3_service.is_configured():
+            return HttpResponse('S3 not configured', status=500)
+
+        if '/' not in s3_key:
+            return HttpResponse('Not a S3 file', status=400)
+
+        # 获取文件后缀
+        ext = os.path.splitext(document.filename)[1]
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, document.filename + ext)
+
+        if s3_service.download_file(s3_key, temp_path):
+            # 读取文件内容
+            with open(temp_path, 'rb') as f:
+                file_content = f.read()
+
+            # 清理临时文件
+            try:
+                os.remove(temp_path)
+                os.rmdir(temp_dir)
+            except:
+                pass
+
+            # 获取 content-type
+            content_type = 'application/octet-stream'
+            is_pdf = document.filename.lower().endswith('.pdf')
+            if is_pdf:
+                content_type = 'application/pdf'
+            elif document.filename.lower().endswith(('.jpg', '.jpeg')):
+                content_type = 'image/jpeg'
+            elif document.filename.lower().endswith('.png'):
+                content_type = 'image/png'
+
+            # 使用 Django HttpResponse 直接返回
+            response = HttpResponse(file_content, content_type=content_type)
+
+            # 统一使用安全的文件名（doc_id + 扩展名）
+            ext = os.path.splitext(document.filename)[1]
+            safe_filename = f"document_{doc_id}{ext}"
+
+            if is_pdf:
+                response['Content-Disposition'] = f'inline; filename="{safe_filename}"'
+            else:
+                response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
+            return response
+        else:
+            return HttpResponse('Failed to download from S3', status=500)
+
+    except Document.DoesNotExist:
+        return HttpResponse('Document not found', status=404)
+    except Exception as e:
+        return HttpResponse(str(e), status=500)
+

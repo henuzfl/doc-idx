@@ -963,8 +963,8 @@
             <select class="modal-input" id="upload-tenant-id">
                 <option value="">选择租户</option>
             </select>
-            <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx" multiple>
-            <div style="font-size: 12px; color: #888; margin-top: 4px;">支持多文件选择（按住 Ctrl/Command 选择多个）</div>
+            <input type="file" class="modal-input" id="upload-file" accept=".txt,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp" multiple>
+            <div style="font-size: 12px; color: #888; margin-top: 4px;">支持 PDF、DOCX、TXT、图片等格式（按住 Ctrl/Command 选择多个）</div>
             <div class="modal-buttons">
                 <button class="modal-btn cancel" onclick="hideUploadModal()">取消</button>
                 <button class="modal-btn confirm" onclick="uploadDocument()">上传</button>
@@ -1623,7 +1623,8 @@
                             </div>
                             <span class="doc-status ${doc.status.toLowerCase()}" style="width: 100px; text-align: center;">${getStatusText(doc.status)}</span>
                             <span class="doc-date" style="color: #888; font-size: 12px; width: 100px; text-align: center;">${formatDate(doc.created_at)}</span>
-                            <button class="delete-btn" style="padding: 6px 12px; font-size: 12px; width: 100px; text-align: center;" onclick="deleteDocument('${doc.id}')">删除</button>
+                            <button class="download-btn" style="padding: 6px 12px; font-size: 12px; width: 60px; text-align: center; margin-right: 8px; background: #4b5563; color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="downloadDocument('${doc.id}', '${doc.filename}')">下载</button>
+                            <button class="delete-btn" style="padding: 6px 12px; font-size: 12px; width: 60px; text-align: center;" onclick="deleteDocument('${doc.id}')">删除</button>
                         </div>
                     `).join('');
 
@@ -1673,6 +1674,28 @@
             if (newPage >= 1 && newPage <= totalPages) {
                 currentDocPage = newPage;
                 loadDocuments();
+            }
+        }
+
+        // 下载文档 - 使用 blob 方式避免文件名编码问题
+        async function downloadDocument(docId, filename) {
+            try {
+                const response = await fetch(`${API_BASE}/documents/${docId}/download/`);
+                if (!response.ok) {
+                    alert('下载失败');
+                    return;
+                }
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                alert('下载失败: ' + error.message);
             }
         }
 

@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rag_app.api.views import DocumentViewSet, ChatViewSet, TenantViewSet
+from rag_app.api.views import DocumentViewSet, ChatViewSet, TenantViewSet, download_file
 from rag_app.api.related_views import RelatedDocumentsViewSet
 
 router = DefaultRouter()
@@ -11,4 +11,5 @@ router.register(r'related', RelatedDocumentsViewSet, basename='related')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('documents/<str:doc_id>/download/', download_file, name='download_file'),
 ]

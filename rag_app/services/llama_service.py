@@ -21,10 +21,154 @@ except ImportError:
     HAS_DASHSCOPE_RERANK = False
     TextReRank = None
 
+# 尝试导入 DashScope 多模态 (Qwen-VL)
+try:
+    from dashscope import MultiModalConversation
+    HAS_MULTIMODAL = True
+except ImportError:
+    HAS_MULTIMODAL = False
+    MultiModalConversation = None
+
 
 # 缓存 vector index 和 query engine 实例
 _vector_index_cache = {}
 _query_engine_cache = {}
+
+# 支持的图片格式
+IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+
+
+def _encode_image_to_base64(file_path: str) -> str:
+    """将图片编码为 base64 字符串"""
+    import base64
+    with open(file_path, 'rb') as f:
+        return base64.b64encode(f.read()).decode('utf-8')
+
+
+def ocr_image(file_path: str) -> str:
+    """
+    使用 DashScope Qwen-VL 识别图片中的文字
+    """
+    if not HAS_MULTIMODAL:
+        print("[OCR] DashScope MultiModal not available")
+        return ""
+
+    try:
+        import os
+        api_key = os.getenv('DASHSCOPE_API_KEY')
+        if not api_key:
+            print("[OCR] DASHSCOPE_API_KEY not set")
+            return ""
+
+        dashscope.api_key = api_key
+        img_data = _encode_image_to_base64(file_path)
+
+        messages = [{
+            'role': 'user',
+            'content': [
+                {'image': f'data:image/jpeg;base64,{img_data}'},
+                {'text': '请仔细识别图片中的所有文字内容，包括中文、英文、数字、标点符号等。请按原文输出，不要遗漏任何文字。'}
+            ]
+        }]
+
+        response = MultiModalConversation.call(
+            model='qwen-vl-plus',
+            messages=messages
+        )
+
+        if response.status_code == 200:
+            text = response.output.choices[0].message.content[0]['text']
+            print(f"[OCR] Success - extracted {len(text)} characters")
+            return text
+        else:
+            print(f"[OCR] Error: {response.code} - {response.message}")
+            return ""
+
+    except Exception as e:
+        print(f"[OCR] Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
+
+
+def analyze_image(file_path: str) -> str:
+    """
+    使用 DashScope Qwen-VL 理解图片内容
+    """
+    if not HAS_MULTIMODAL:
+        print("[VL] DashScope MultiModal not available")
+        return ""
+
+    try:
+        import os
+        api_key = os.getenv('DASHSCOPE_API_KEY')
+        if not api_key:
+            print("[VL] DASHSCOPE_API_KEY not set")
+            return ""
+
+        dashscope.api_key = api_key
+        img_data = _encode_image_to_base64(file_path)
+
+        messages = [{
+            'role': 'user',
+            'content': [
+                {'image': f'data:image/jpeg;base64,{img_data}'},
+                {'text': '请详细描述这张图片的内容，包括：场景、人物、物品、颜色、布局等信息。如果图片中有文字，也请标注出来。'}
+            ]
+        }]
+
+        response = MultiModalConversation.call(
+            model='qwen-vl-plus',
+            messages=messages
+        )
+
+        if response.status_code == 200:
+            text = response.output.choices[0].message.content[0]['text']
+            print(f"[VL] Success - description length: {len(text)}")
+            return text
+        else:
+            print(f"[VL] Error: {response.code} - {response.message}")
+            return ""
+
+    except Exception as e:
+        print(f"[VL] Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
+
+
+def process_image(file_path: str, doc_metadata: dict):
+    """
+    处理图片：OCR + Qwen-VL 多模态理解
+    返回 llama_index Document 列表
+    """
+    print(f"[Image] Processing: {file_path}")
+
+    results = []
+
+    # 1. OCR 提取文字
+    print("[Image] Running OCR...")
+    ocr_text = ocr_image(file_path)
+    if ocr_text:
+        results.append(f"【OCR识别文字】\n{ocr_text}")
+
+    # 2. Qwen-VL 理解图片
+    print("[Image] Running Qwen-VL analysis...")
+    vl_description = analyze_image(file_path)
+    if vl_description:
+        results.append(f"【图片内容描述】\n{vl_description}")
+
+    if not results:
+        print("[Image] No content extracted")
+        return []
+
+    # 3. 合并结果并创建 Document
+    combined_text = "\n\n".join(results)
+    from llama_index.core import Document
+    doc = Document(text=combined_text, metadata=doc_metadata)
+
+    print(f"[Image] Combined text length: {len(combined_text)}")
+    return [doc]
 
 
 def get_query_engine(tenant_id: str):
@@ -170,6 +314,11 @@ def ingest_document(file_path: str, doc_metadata: dict):
                 documents = [Document(text=text)]
                 print(f"[Ingest] python-docx loaded, text length: {len(text)}")
 
+        elif ext in IMAGE_EXTS:
+            # 图片文件 - OCR + 多模态理解
+            documents = process_image(file_path, doc_metadata)
+            print(f"[Ingest] Image processed, got {len(documents)} documents")
+
         elif ext in ['.txt', '.md', '.json']:
             # 文本文件
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -269,11 +418,21 @@ def ask_question(query: str, tenant_id: str, chat_history=None, use_rerank=True)
 
     # Build sources JSON summary
     source_info = []
+    seen_doc_ids = set()  # 用于去重
     response_str = str(response).strip()
 
     if response.source_nodes:
         from rag_app.models import Document
         for node in response.source_nodes:
+            # Get doc_id from metadata
+            doc_id = node.node.metadata.get('doc_id', '')
+
+            # 去重：只保留每个文档的第一个 chunk
+            if doc_id and doc_id in seen_doc_ids:
+                continue
+            if doc_id:
+                seen_doc_ids.add(doc_id)
+
             content = node.node.get_content()[:200]
             # Fix encoding issues
             try:
@@ -281,8 +440,6 @@ def ask_question(query: str, tenant_id: str, chat_history=None, use_rerank=True)
             except:
                 content = str(content)
 
-            # Get doc_id from metadata and resolve actual filename from database
-            doc_id = node.node.metadata.get('doc_id', '')
             original_filename = ''
             if doc_id:
                 try:
