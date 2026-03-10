@@ -77,7 +77,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except (ValueError, TypeError):
             pass
 
-        return queryset.order_by('-created_at')
+        return queryset.order_by('-updated_at')
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -130,7 +130,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         import uuid
         tenant_id = request.data.get('tenant_id')
         doc_id = str(uuid.uuid4())
+        # S3 key 使用安全文件名，filename 字段保留原始文件名
         safe_filename = sanitize_filename(uploaded_file.name)
+        original_filename = uploaded_file.name
         s3_key = f"{tenant_id}/{doc_id}/{safe_filename}"
 
         try:
@@ -139,14 +141,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 document = Document.objects.create(
                     id=doc_id,
                     status='PENDING',
-                    filename=safe_filename,
+                    filename=original_filename,
                     tenant_id=tenant_id,
                     file=s3_key
                 )
             else:
                 document = Document.objects.create(
                     status='PENDING',
-                    filename=uploaded_file.name,
+                    filename=original_filename,
                     tenant_id=tenant_id
                 )
 
@@ -176,7 +178,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         for uploaded_file in files:
             try:
                 doc_id = str(uuid.uuid4())
+                # S3 key 使用安全文件名，filename 字段保留原始文件名
                 safe_filename = sanitize_filename(uploaded_file.name)
+                original_filename = uploaded_file.name
                 s3_key = f"{tenant_id}/{doc_id}/{safe_filename}"
 
                 # 直接上传到 S3
@@ -185,14 +189,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     document = Document.objects.create(
                         id=doc_id,
                         status='PENDING',
-                        filename=safe_filename,
+                        filename=original_filename,
                         tenant_id=tenant_id,
                         file=s3_key
                     )
                 else:
                     document = Document.objects.create(
                         status='PENDING',
-                        filename=uploaded_file.name,
+                        filename=original_filename,
                         tenant_id=tenant_id
                     )
 
@@ -231,7 +235,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         import uuid
 
         filename = uploaded_file.name
+        # S3 key 使用安全文件名，filename 字段保留原始文件名
         safe_filename = sanitize_filename(filename)
+        original_filename = filename
         tenant_id = request.data.get('tenant_id')
 
         # 生成 S3 key
@@ -247,13 +253,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 document = serializer.save(
                     id=doc_id,
                     status='PENDING',
-                    filename=safe_filename,
+                    filename=original_filename,
                     tenant_id=tenant_id,
                     file=s3_key
                 )
             else:
                 # 如果没有配置 S3，保存到本地
-                document = serializer.save(status='PENDING', filename=safe_filename)
+                document = serializer.save(status='PENDING', filename=original_filename)
 
             # 后台向量化
             def vectorize():
