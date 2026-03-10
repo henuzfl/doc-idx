@@ -1232,12 +1232,14 @@
                             sourcesHtml = '<div class="sources"><strong>参考资料:</strong><br>';
                             msg.sources.forEach((s, i) => {
                                 let fileName = s.metadata?.original_filename || s.metadata?.file_name || '未知文件';
+                                const docId = s.metadata?.doc_id || '';
                                 const pageLabel = s.metadata?.page_label || '';
                                 const content = s.content_preview?.substring(0, 150) || '';
                                 const score = (s.score * 100).toFixed(1);
+                                const downloadBtn = docId ? `<button onclick="downloadDocument('${docId}', '${fileName}')" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #4b5563; color: white; border: none; border-radius: 3px; cursor: pointer;">下载</button>` : '';
                                 sourcesHtml += `
                                     <div class="source-item">
-                                        <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''}</div>
+                                        <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''} ${downloadBtn}</div>
                                         <div class="source-content">${content}...</div>
                                         <div class="source-score">相关性: ${score}%</div>
                                     </div>
@@ -1362,13 +1364,15 @@
                         data.sources.forEach((s, i) => {
                             // 优先使用 original_filename，否则使用 file_name
                             let fileName = s.metadata?.original_filename || s.metadata?.file_name || '未知文件';
+                            const docId = s.metadata?.doc_id || '';
 
                             const pageLabel = s.metadata?.page_label || '';
                             const content = s.content_preview?.substring(0, 150) || '';
                             const score = (s.score * 100).toFixed(1);
+                            const downloadBtn = docId ? `<button onclick="downloadDocument('${docId}', '${fileName}')" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #4b5563; color: white; border: none; border-radius: 3px; cursor: pointer;">下载</button>` : '';
                             sourcesHtml += `
                                 <div class="source-item">
-                                    <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''}</div>
+                                    <div class="source-file">📄 ${fileName}${pageLabel ? ' (第' + pageLabel + '页)' : ''} ${downloadBtn}</div>
                                     <div class="source-content">${content}...</div>
                                     <div class="source-score">相关性: ${score}%</div>
                                 </div>
