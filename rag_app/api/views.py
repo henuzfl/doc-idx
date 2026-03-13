@@ -9,7 +9,7 @@ from rag_app.models import Document, ChatSession, ChatMessage, Tenant
 from rag_app.api.serializers import DocumentSerializer, ChatSessionSerializer, TenantSerializer, ChatSessionListSerializer
 from rag_app.services.llama_service import ask_question, delete_document_from_vector
 from rag_app.services.s3_service import s3_service
-from rag_app.services.vector_worker import submit_task
+from rag_app.tasks import process_document, process_document_high
 import tempfile
 import os
 import re
@@ -151,13 +151,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     tenant_id=tenant_id
                 )
 
-            # 使用工作线程处理向量化（生产者-消费者模式）
-            submit_task(
-                str(document.id),
-                str(document.file),
-                document.filename,
-                tenant_id
-            )
+            # 使用 Celery 后台任务
+            process_document.delay(str(document.id))
 
             serializer = DocumentSerializer(document)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -197,13 +192,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                         tenant_id=tenant_id
                     )
 
-                # 使用工作线程处理向量化（生产者-消费者模式）
-                submit_task(
-                    str(document.id),
-                    str(document.file),
-                    document.filename,
-                    tenant_id
-                )
+                # 使用 Celery 后台任务
+                process_document.delay(str(document.id))
 
                 uploaded_docs.append({
                     'id': str(document.id),
@@ -256,13 +246,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 # 如果没有配置 S3，保存到本地
                 document = serializer.save(status='PENDING', filename=original_filename)
 
-            # 使用工作线程处理向量化（生产者-消费者模式）
-            submit_task(
-                str(document.id),
-                str(document.file),
-                document.filename,
-                tenant_id
-            )
+            # 使用 Celery 后台任务
+            process_document.delay(str(document.id))
 
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -302,13 +287,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
             document.status = 'PENDING'
             document.save()
 
-            # 使用工作线程处理向量化
-            submit_task(
-                str(document.id),
-                str(document.file),
-                document.filename,
-                document.tenant_id
-            )
+            # 使用 Celery 后台任务
+            process_document.delay(str(document.id))
             return Response({'status': 'queued', 'document_id': str(document.id)})
         except Document.DoesNotExist:
             return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
