@@ -352,6 +352,12 @@ def ingest_document(file_path: str, doc_metadata: dict):
     for doc in documents:
         index.insert(doc)
 
+    # 关闭连接，避免连接泄漏
+    try:
+        index.vector_store.close()
+    except:
+        pass
+
     print(f"[Ingest] Completed successfully!")
     return True
 
@@ -471,6 +477,12 @@ def ask_question(query: str, tenant_id: str, chat_history=None, use_rerank=True)
             answer = "抱歉，您的知识库中没有任何文档。请先在知识库中上传文档，然后我可以回答您关于这些文档的问题。"
         else:
             answer = "抱歉，我无法从您提供的文档中找到相关的答案。"
+
+    # 关闭连接，避免连接泄漏
+    try:
+        index.vector_store.close()
+    except:
+        pass
 
     return answer, source_info
 
