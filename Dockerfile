@@ -31,5 +31,5 @@ RUN python manage.py collectstatic --noinput || true
 # 暴露端口
 EXPOSE 8000
 
-# 启动命令
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# 默认启动 Django
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"]
